@@ -31,33 +31,6 @@ function extractVideoConfig(html: string) {
   }
 }
 
-// Função para extrair ID do vídeo do YouTube a partir da URL
-function getYouTubeVideoId(url: string): string | null {
-  const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
-  const match = url.match(regExp);
-  return (match && match[7].length === 11) ? match[7] : null;
-}
-
-// Função para carregar YouTube API
-function loadYouTubeAPI(): Promise<void> {
-  return new Promise((resolve) => {
-    if (window.YT && window.YT.Player) {
-      resolve();
-      return;
-    }
-
-    window.onYouTubeIframeAPIReady = () => {
-      resolve();
-    };
-
-    if (!document.querySelector('script[src*="youtube.com/iframe_api"]')) {
-      const script = document.createElement('script');
-      script.src = 'https://www.youtube.com/iframe_api';
-      script.async = true;
-      document.head.appendChild(script);
-    }
-  });
-}
 
 
 interface EpisodePlayerProps {
@@ -67,27 +40,17 @@ interface EpisodePlayerProps {
 
 type VideoType = 'legendado' | 'dublado';
 
-// Declarar tipos globais para YouTube API
-declare global {
-  interface Window {
-    YT: any;
-    onYouTubeIframeAPIReady: () => void;
-  }
-}
-
 export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
   const { isAuthenticated } = useAuth();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const youtubePlayerRef = useRef<any>(null);
-  const youtubeContainerRef = useRef<HTMLDivElement>(null);
   const [hasMarked, setHasMarked] = useState(false);
   const [poster, setPoster] = useState<string | undefined>(undefined);
   const [activeTab, setActiveTab] = useState<VideoType>('legendado');
   const [selectedLinkIndex, setSelectedLinkIndex] = useState<number>(0);
   const [bloggerStreams, setBloggerStreams] = useState<string[]>([]);
   const [isLoadingBlogger, setIsLoadingBlogger] = useState(false);
-  const [youtubeApiReady, setYoutubeApiReady] = useState(false);
-  const [currentVideoIds, setCurrentVideoIds] = useState<string[]>([]);
+  const [selectedQuality, setSelectedQuality] = useState<number>(0);
+  const [showQualitySelector, setShowQualitySelector] = useState(false);
 
   // Obter links do novo sistema ou fallback para campos antigos
   const getLinksForType = (tipo: VideoType): LinkEpisodio[] => {
@@ -211,13 +174,9 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
         // Extrair URLs dos streams
         const streamUrls = videoConfig.streams.map((stream: any) => stream.play_url || stream.url).filter(Boolean);
         setBloggerStreams(streamUrls);
-        
-        // Extrair IDs de vídeo do YouTube das URLs
-        const videoIds = streamUrls.map((url: string) => getYouTubeVideoId(url)).filter(Boolean) as string[];
-        setCurrentVideoIds(videoIds);
+        setSelectedQuality(0); // Resetar para primeira qualidade
         
         console.log(`Encontrados ${streamUrls.length} streams do Blogger`);
-        console.log(`IDs de vídeo do YouTube:`, videoIds);
       } else {
         console.warn('VIDEO_CONFIG não encontrado ou sem streams');
       }
@@ -245,7 +204,21 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
   // Resetar índice do link quando mudar de tab
   useEffect(() => {
     setSelectedLinkIndex(0);
+    setSelectedQuality(0);
+    setShowQualitySelector(false);
   }, [activeTab]);
+
+  // Fechar seletor de qualidade quando clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showQualitySelector) {
+        setShowQualitySelector(false);
+      }
+    };
+
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, [showQualitySelector]);
 
   // Processar URL do Blogger quando o link atual mudar
   useEffect(() => {
@@ -253,101 +226,41 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
       processBloggerUrl(currentLink.url);
     } else {
       setBloggerStreams([]);
-      setCurrentVideoIds([]);
-      // Limpar player do YouTube se existir
-      if (youtubePlayerRef.current) {
-        youtubePlayerRef.current.destroy();
-        youtubePlayerRef.current = null;
-      }
+      setSelectedQuality(0);
     }
   }, [currentLink?.url]);
 
-  // Função para configurar múltiplas fontes no player HTML5
-  const setupVideoSources = () => {
-    const video = videoRef.current;
-    if (!video || bloggerStreams.length === 0) return;
-
-    // Limpar fontes existentes
-    video.innerHTML = '';
-
-    // Adicionar cada stream como uma fonte
-    bloggerStreams.forEach((streamUrl, index) => {
-      const source = document.createElement('source');
-      source.src = streamUrl;
-      source.type = 'video/mp4';
-      // Adicionar atributo de qualidade se possível detectar
-      source.setAttribute('data-quality', `${720 + (index * 360)}p`);
-      video.appendChild(source);
-    });
-
-    video.load();
+  // Função para trocar qualidade do vídeo
+  const changeQuality = (qualityIndex: number) => {
+    setSelectedQuality(qualityIndex);
+    setShowQualitySelector(false);
   };
 
-  // Função para criar YouTube player
-  const createYouTubePlayer = () => {
-    if (!youtubeContainerRef.current || currentVideoIds.length === 0) return;
+  // Função para obter nome da qualidade baseado no índice
+  const getQualityName = (index: number) => {
+    const qualities = ['720p', '480p', '360p', '240p'];
+    return qualities[index] || `Qualidade ${index + 1}`;
+  };
 
-    // Limpar player anterior se existir
-    if (youtubePlayerRef.current) {
-      youtubePlayerRef.current.destroy();
-    }
-
-    // Criar novo player
-    youtubePlayerRef.current = new window.YT.Player(youtubeContainerRef.current, {
-      height: '100%',
-      width: '100%',
-      videoId: currentVideoIds[0], // Começar com o primeiro vídeo
-      playerVars: {
-        autoplay: 0,
-        controls: 1,
-        rel: 0,
-        showinfo: 0,
-        modestbranding: 1,
-        fs: 1,
-        cc_load_policy: 0,
-        iv_load_policy: 3,
-        origin: window.location.origin,
-        enablejsapi: 1,
-        // Configurar playlist se houver múltiplos vídeos
-        ...(currentVideoIds.length > 1 && {
-          playlist: currentVideoIds.slice(1).join(',')
-        })
-      },
-      events: {
-        onReady: (event: any) => {
-          console.log('YouTube player pronto');
-        },
-        onStateChange: (event: any) => {
-          // Quando o vídeo começar a tocar
-          if (event.data === window.YT.PlayerState.PLAYING) {
-            handlePlay();
-          }
+  // Atualizar fonte do vídeo quando qualidade mudar
+  useEffect(() => {
+    if (isBloggerPlayer && bloggerStreams.length > 0 && videoRef.current) {
+      const video = videoRef.current;
+      const currentTime = video.currentTime;
+      const wasPlaying = !video.paused;
+      
+      video.src = bloggerStreams[selectedQuality];
+      video.load();
+      
+      // Restaurar posição e estado de reprodução
+      video.addEventListener('loadedmetadata', () => {
+        video.currentTime = currentTime;
+        if (wasPlaying) {
+          video.play().catch(console.error);
         }
-      }
-    });
-  };
-
-  // Carregar YouTube API
-  useEffect(() => {
-    loadYouTubeAPI().then(() => {
-      setYoutubeApiReady(true);
-    });
-  }, []);
-
-  // Criar YouTube player quando API estiver pronta e houver vídeos
-  useEffect(() => {
-    if (youtubeApiReady && isBloggerPlayer && currentVideoIds.length > 0 && youtubeContainerRef.current) {
-      createYouTubePlayer();
+      }, { once: true });
     }
-  }, [youtubeApiReady, isBloggerPlayer, currentVideoIds]);
-
-  // Configurar fontes quando streams do Blogger mudarem (para fallback HTML5)
-  useEffect(() => {
-    if (isBloggerPlayer && bloggerStreams.length > 0 && currentVideoIds.length === 0) {
-      // Se não conseguiu extrair IDs do YouTube, usar player HTML5 como fallback
-      setupVideoSources();
-    }
-  }, [bloggerStreams, isBloggerPlayer, currentVideoIds]);
+  }, [selectedQuality, bloggerStreams, isBloggerPlayer]);
 
   const handlePlay = async () => {
     if (!isAuthenticated || hasMarked || !episodio) {
@@ -450,18 +363,11 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
 
 
       {/* Player */}
-      <div className="w-full aspect-video bg-black rounded-lg overflow-hidden">
+      <div className="w-full aspect-video bg-black rounded-lg overflow-hidden relative">
         {isLoadingBlogger ? (
           <div className="w-full h-full flex items-center justify-center">
             <p className="text-gray-400">Carregando streams do Blogger...</p>
           </div>
-        ) : isBloggerPlayer && currentVideoIds.length > 0 ? (
-          // YouTube Player para streams do Blogger
-          <div 
-            ref={youtubeContainerRef}
-            key={`youtube-${episodioId}-${activeTab}-${selectedLinkIndex}`}
-            className="w-full h-full"
-          />
         ) : isIframe && currentLink.url ? (
           <iframe
             key={`${episodioId}-${activeTab}-${selectedLinkIndex}`}
@@ -473,17 +379,51 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
             onLoad={handleIframeLoad}
           />
         ) : isVideoPlayer ? (
-          <video
-            ref={videoRef}
-            key={`${episodioId}-${activeTab}-${selectedLinkIndex}`}
-            controls
-            className="w-full h-full"
-            poster={poster}
-            src={!isBloggerPlayer ? currentLink.url : undefined}
-            onPlay={handlePlay}
-          >
-            {/* As fontes múltiplas serão adicionadas dinamicamente via setupVideoSources */}
-          </video>
+          <>
+            <video
+              ref={videoRef}
+              key={`${episodioId}-${activeTab}-${selectedLinkIndex}-${selectedQuality}`}
+              controls
+              className="w-full h-full"
+              poster={poster}
+              src={isBloggerPlayer ? bloggerStreams[selectedQuality] : currentLink.url}
+              onPlay={handlePlay}
+            />
+            
+            {/* Seletor de Qualidade Customizado para Blogger */}
+            {isBloggerPlayer && bloggerStreams.length > 1 && (
+              <div className="absolute top-4 right-4">
+                <div className="relative">
+                  <button
+                    onClick={() => setShowQualitySelector(!showQualitySelector)}
+                    className="bg-black bg-opacity-70 text-white px-3 py-2 rounded-lg flex items-center gap-2 hover:bg-opacity-90 transition-all"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    <span className="text-sm">{getQualityName(selectedQuality)}</span>
+                  </button>
+                  
+                  {showQualitySelector && (
+                    <div className="absolute top-full right-0 mt-2 bg-black bg-opacity-90 rounded-lg overflow-hidden min-w-[120px] z-10">
+                      {bloggerStreams.map((_, index) => (
+                        <button
+                          key={index}
+                          onClick={() => changeQuality(index)}
+                          className={`w-full px-4 py-2 text-left text-sm hover:bg-white hover:bg-opacity-20 transition-colors ${
+                            selectedQuality === index ? 'bg-purple-600 text-white' : 'text-gray-300'
+                          }`}
+                        >
+                          {getQualityName(index)}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             <p className="text-gray-400">Nenhum vídeo disponível</p>
@@ -493,15 +433,10 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
 
       {/* Informações do player atual */}
       <div className="mt-2 text-sm text-gray-400">
-        {isBloggerPlayer && currentVideoIds.length > 0 ? (
+        {isBloggerPlayer && bloggerStreams.length > 0 ? (
           <span>
-            YouTube Player - {currentVideoIds.length} vídeo(s) disponível(is)
-            {currentVideoIds.length > 1 && ' (playlist automática)'}
-          </span>
-        ) : isBloggerPlayer && bloggerStreams.length > 0 ? (
-          <span>
-            Player HTML5 - {bloggerStreams.length} qualidade(s) disponível(is)
-            {bloggerStreams.length > 1 && ' (use a engrenagem do player para alterar)'}
+            Player Customizado - {bloggerStreams.length} qualidade(s) disponível(is)
+            {bloggerStreams.length > 1 && ` - Atual: ${getQualityName(selectedQuality)}`}
           </span>
         ) : currentLinks.length > 1 ? (
           <span>Player {selectedLinkIndex + 1} de {currentLinks.length}</span>
