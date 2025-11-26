@@ -108,27 +108,65 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     if (!isBloggerUrl(url)) return;
 
     setIsLoadingBlogger(true);
-    try {
-      // Fazer requisição HTTP para obter o HTML da página
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-      });
+    
+    // Lista de serviços de proxy para tentar
+    const proxyServices = [
+      `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+      `https://corsproxy.io/?${encodeURIComponent(url)}`,
+      `https://cors-anywhere.herokuapp.com/${url}`
+    ];
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
+    try {
+      let html = '';
+      let success = false;
+
+      // Tentar cada serviço de proxy
+      for (const proxyUrl of proxyServices) {
+        try {
+          console.log(`Tentando proxy: ${proxyUrl}`);
+          
+          const response = await fetch(proxyUrl, {
+            method: 'GET',
+            headers: {
+              'Accept': proxyUrl.includes('allorigins') ? 'application/json' : 'text/html',
+            }
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          if (proxyUrl.includes('allorigins')) {
+            const data = await response.json();
+            html = data.contents;
+          } else {
+            html = await response.text();
+          }
+          
+          if (html) {
+            success = true;
+            console.log('Proxy funcionou:', proxyUrl);
+            break;
+          }
+        } catch (proxyError) {
+          console.warn(`Proxy falhou: ${proxyUrl}`, proxyError);
+          continue;
+        }
       }
 
-      const html = await response.text();
+      if (!success || !html) {
+        throw new Error('Todos os serviços de proxy falharam');
+      }
+
       const videoConfig = extractVideoConfig(html);
 
       if (videoConfig && videoConfig.streams) {
         // Extrair URLs dos streams
         const streamUrls = videoConfig.streams.map((stream: any) => stream.play_url || stream.url).filter(Boolean);
         setBloggerStreams(streamUrls);
+        console.log(`Encontrados ${streamUrls.length} streams do Blogger`);
+      } else {
+        console.warn('VIDEO_CONFIG não encontrado ou sem streams');
       }
     } catch (error) {
       console.error('Erro ao processar URL do Blogger:', error);
