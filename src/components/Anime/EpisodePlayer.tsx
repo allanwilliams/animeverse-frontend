@@ -31,6 +31,26 @@ function extractVideoConfig(html: string) {
   }
 }
 
+// Função para detectar qualidade da URL
+function detectQualityFromUrl(url: string): number {
+  // Tentar extrair qualidade da URL
+  const qualityMatches = url.match(/(\d+)p/i) || url.match(/itag[=\/](\d+)/i);
+  if (qualityMatches) {
+    const quality = parseInt(qualityMatches[1]);
+    // Se for itag, converter para resolução aproximada
+    if (url.includes('itag')) {
+      const itagToQuality: { [key: number]: number } = {
+        18: 360, 22: 720, 37: 1080, 38: 3072,
+        82: 360, 83: 240, 84: 720, 85: 1080,
+        133: 240, 134: 360, 135: 480, 136: 720, 137: 1080
+      };
+      return itagToQuality[quality] || quality;
+    }
+    return quality;
+  }
+  return 0;
+}
+
 
 
 interface EpisodePlayerProps {
@@ -171,12 +191,33 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
       const videoConfig = extractVideoConfig(html);
 
       if (videoConfig && videoConfig.streams) {
-        // Extrair URLs dos streams
-        const streamUrls = videoConfig.streams.map((stream: any) => stream.play_url || stream.url).filter(Boolean);
+        // Extrair URLs dos streams com informações de qualidade
+        const streams = videoConfig.streams.map((stream: any, index: number) => {
+          const url = stream.play_url || stream.url;
+          const detectedQuality = detectQualityFromUrl(url);
+          const quality = detectedQuality || stream.quality || stream.itag || (720 - (index * 120)); // Fallback decrescente
+          
+          return {
+            url: url,
+            quality: quality,
+            index: index,
+            originalIndex: index
+          };
+        }).filter((stream: any) => stream.url);
+
+        // Ordenar streams por qualidade (maior primeiro)
+        streams.sort((a: any, b: any) => {
+          const qualityA = typeof a.quality === 'number' ? a.quality : parseInt(a.quality.toString().replace('p', '')) || 0;
+          const qualityB = typeof b.quality === 'number' ? b.quality : parseInt(b.quality.toString().replace('p', '')) || 0;
+          return qualityB - qualityA; // Ordem decrescente (maior primeiro)
+        });
+
+        const streamUrls = streams.map((stream: any) => stream.url);
         setBloggerStreams(streamUrls);
-        setSelectedQuality(0); // Resetar para primeira qualidade
+        setSelectedQuality(0); // Resetar para primeira qualidade (agora a maior)
         
         console.log(`Encontrados ${streamUrls.length} streams do Blogger`);
+        console.log('Streams ordenados por qualidade:', streams.map((s: any) => ({ quality: s.quality, originalIndex: s.originalIndex })));
       } else {
         console.warn('VIDEO_CONFIG não encontrado ou sem streams');
       }
@@ -238,8 +279,19 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
 
   // Função para obter nome da qualidade baseado no índice
   const getQualityName = (index: number) => {
-    const qualities = ['720p', '480p', '360p', '240p'];
-    return qualities[index] || `Qualidade ${index + 1}`;
+    if (bloggerStreams.length === 0) return `Qualidade ${index + 1}`;
+    
+    // Tentar detectar qualidade real da URL
+    const url = bloggerStreams[index];
+    const detectedQuality = detectQualityFromUrl(url);
+    
+    if (detectedQuality > 0) {
+      return `${detectedQuality}p`;
+    }
+    
+    // Fallback: assumir ordem decrescente de qualidade
+    const fallbackQualities = ['1080p', '720p', '480p', '360p', '240p', '144p'];
+    return fallbackQualities[index] || `Qualidade ${index + 1}`;
   };
 
   // Atualizar fonte do vídeo quando qualidade mudar
