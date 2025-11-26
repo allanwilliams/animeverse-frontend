@@ -31,22 +31,89 @@ function extractVideoConfig(html: string) {
   }
 }
 
-// Função para detectar qualidade da URL
-function detectQualityFromUrl(url: string): number {
-  // Tentar extrair qualidade da URL
-  const qualityMatches = url.match(/(\d+)p/i) || url.match(/itag[=\/](\d+)/i);
-  if (qualityMatches) {
-    const quality = parseInt(qualityMatches[1]);
-    // Se for itag, converter para resolução aproximada
-    if (url.includes('itag')) {
-      const itagToQuality: { [key: number]: number } = {
-        18: 360, 22: 720, 37: 1080, 38: 3072,
-        82: 360, 83: 240, 84: 720, 85: 1080,
-        133: 240, 134: 360, 135: 480, 136: 720, 137: 1080
-      };
-      return itagToQuality[quality] || quality;
+// Função para detectar qualidade da URL com múltiplas estratégias
+function detectQualityFromUrl(url: string, streamData?: any): number {
+  // Estratégia 1: Verificar dados do stream primeiro
+  if (streamData) {
+    if (streamData.quality && typeof streamData.quality === 'number') {
+      return streamData.quality;
     }
-    return quality;
+    if (streamData.quality && typeof streamData.quality === 'string') {
+      const qualityNum = parseInt(streamData.quality.replace('p', ''));
+      if (qualityNum > 0) return qualityNum;
+    }
+    if (streamData.height && typeof streamData.height === 'number') {
+      return streamData.height;
+    }
+    if (streamData.width && typeof streamData.width === 'number') {
+      // Converter largura para altura aproximada (16:9)
+      return Math.round(streamData.width * 9 / 16);
+    }
+  }
+
+  // Estratégia 2: Analisar parâmetros da URL
+  const urlParams = new URLSearchParams(url.split('?')[1] || '');
+  
+  // Verificar parâmetro de qualidade comum
+  const qualityParam = urlParams.get('quality') || urlParams.get('q') || urlParams.get('res');
+  if (qualityParam) {
+    const qualityNum = parseInt(qualityParam.replace('p', ''));
+    if (qualityNum > 0) return qualityNum;
+  }
+
+  // Estratégia 3: ITags do YouTube
+  const itagMatch = url.match(/itag[=\/](\d+)/i);
+  if (itagMatch) {
+    const itag = parseInt(itagMatch[1]);
+    const itagToQuality: { [key: number]: number } = {
+      18: 360, 22: 720, 37: 1080, 38: 3072,
+      82: 360, 83: 240, 84: 720, 85: 1080,
+      133: 240, 134: 360, 135: 480, 136: 720, 137: 1080,
+      298: 720, 299: 1080, 396: 360, 397: 480
+    };
+    if (itagToQuality[itag]) return itagToQuality[itag];
+  }
+
+  // Estratégia 4: Padrões na URL
+  const qualityPatterns = [
+    /(\d+)p/i,           // 720p, 480p, etc.
+    /(\d+)P/,            // 720P, 480P, etc.
+    /_(\d+)_/,           // _720_, _480_, etc.
+    /quality[=:](\d+)/i, // quality=720, quality:480
+    /res[=:](\d+)/i,     // res=720, res:480
+    /(\d{3,4})(?=\D|$)/  // números de 3-4 dígitos (720, 1080, etc.)
+  ];
+
+  for (const pattern of qualityPatterns) {
+    const match = url.match(pattern);
+    if (match) {
+      const quality = parseInt(match[1]);
+      // Filtrar apenas resoluções válidas
+      if (quality >= 144 && quality <= 4320) {
+        return quality;
+      }
+    }
+  }
+
+  return 0;
+}
+
+// Função para analisar tamanho do arquivo (se disponível)
+async function analyzeStreamSize(url: string): Promise<number> {
+  try {
+    const response = await fetch(url, { method: 'HEAD' });
+    const contentLength = response.headers.get('content-length');
+    if (contentLength) {
+      const sizeInMB = parseInt(contentLength) / (1024 * 1024);
+      // Estimar qualidade baseada no tamanho (muito aproximado)
+      if (sizeInMB > 500) return 1080;
+      if (sizeInMB > 200) return 720;
+      if (sizeInMB > 100) return 480;
+      if (sizeInMB > 50) return 360;
+      return 240;
+    }
+  } catch (error) {
+    // Ignorar erros de rede
   }
   return 0;
 }
@@ -71,6 +138,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
   const [isLoadingBlogger, setIsLoadingBlogger] = useState(false);
   const [selectedQuality, setSelectedQuality] = useState<number>(0);
   const [showQualitySelector, setShowQualitySelector] = useState(false);
+  const [detectedQualities, setDetectedQualities] = useState<number[]>([]);
 
   // Obter links do novo sistema ou fallback para campos antigos
   const getLinksForType = (tipo: VideoType): LinkEpisodio[] => {
@@ -191,33 +259,64 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
       const videoConfig = extractVideoConfig(html);
 
       if (videoConfig && videoConfig.streams) {
-        // Extrair URLs dos streams com informações de qualidade
-        const streams = videoConfig.streams.map((stream: any, index: number) => {
-          const url = stream.play_url || stream.url;
-          const detectedQuality = detectQualityFromUrl(url);
-          const quality = detectedQuality || stream.quality || stream.itag || (720 - (index * 120)); // Fallback decrescente
+        // Processar streams com detecção avançada
+        const processStreams = async () => {
+          const streams = await Promise.all(
+            videoConfig.streams.map(async (stream: any, index: number) => {
+              const url = stream.play_url || stream.url;
+              if (!url) return null;
+
+              // Tentar múltiplas estratégias de detecção
+              let detectedQuality = detectQualityFromUrl(url, stream);
+              
+              // Se não conseguiu detectar, tentar analisar tamanho do arquivo
+              if (detectedQuality === 0) {
+                detectedQuality = await analyzeStreamSize(url);
+              }
+
+              // Fallback baseado na posição (assumindo ordem comum)
+              if (detectedQuality === 0) {
+                const fallbackQualities = [1080, 720, 480, 360, 240];
+                detectedQuality = fallbackQualities[index] || (720 - (index * 120));
+              }
+
+              return {
+                url: url,
+                quality: detectedQuality,
+                originalIndex: index,
+                streamData: stream
+              };
+            })
+          );
+
+          // Filtrar streams válidos
+          const validStreams = streams.filter((stream: any) => stream !== null);
+
+          // Ordenar por qualidade (maior primeiro)
+          validStreams.sort((a: any, b: any) => b.quality - a.quality);
+
+          // Se todas as qualidades são iguais, manter ordem original
+          const uniqueQualities = [...new Set(validStreams.map((s: any) => s.quality))];
+          if (uniqueQualities.length === 1) {
+            validStreams.sort((a: any, b: any) => b.originalIndex - a.originalIndex);
+          }
+
+          const streamUrls = validStreams.map((stream: any) => stream.url);
+          const qualities = validStreams.map((stream: any) => stream.quality);
           
-          return {
-            url: url,
-            quality: quality,
-            index: index,
-            originalIndex: index
-          };
-        }).filter((stream: any) => stream.url);
+          setBloggerStreams(streamUrls);
+          setDetectedQualities(qualities);
+          setSelectedQuality(0);
+          
+          console.log(`Encontrados ${streamUrls.length} streams do Blogger`);
+          console.log('Análise de qualidade:', validStreams.map((s: any) => ({ 
+            originalIndex: s.originalIndex, 
+            detectedQuality: s.quality,
+            url: s.url.substring(0, 100) + '...'
+          })));
+        };
 
-        // Ordenar streams por qualidade (maior primeiro)
-        streams.sort((a: any, b: any) => {
-          const qualityA = typeof a.quality === 'number' ? a.quality : parseInt(a.quality.toString().replace('p', '')) || 0;
-          const qualityB = typeof b.quality === 'number' ? b.quality : parseInt(b.quality.toString().replace('p', '')) || 0;
-          return qualityB - qualityA; // Ordem decrescente (maior primeiro)
-        });
-
-        const streamUrls = streams.map((stream: any) => stream.url);
-        setBloggerStreams(streamUrls);
-        setSelectedQuality(0); // Resetar para primeira qualidade (agora a maior)
-        
-        console.log(`Encontrados ${streamUrls.length} streams do Blogger`);
-        console.log('Streams ordenados por qualidade:', streams.map((s: any) => ({ quality: s.quality, originalIndex: s.originalIndex })));
+        processStreams();
       } else {
         console.warn('VIDEO_CONFIG não encontrado ou sem streams');
       }
@@ -240,6 +339,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     setActiveTab('legendado');
     setSelectedLinkIndex(0);
     setHasMarked(false);
+    setDetectedQualities([]);
   }, [episodioId]);
 
   // Resetar índice do link quando mudar de tab
@@ -247,6 +347,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     setSelectedLinkIndex(0);
     setSelectedQuality(0);
     setShowQualitySelector(false);
+    setDetectedQualities([]);
   }, [activeTab]);
 
   // Fechar seletor de qualidade quando clicar fora
@@ -267,6 +368,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
       processBloggerUrl(currentLink.url);
     } else {
       setBloggerStreams([]);
+      setDetectedQualities([]);
       setSelectedQuality(0);
     }
   }, [currentLink?.url]);
@@ -279,18 +381,23 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
 
   // Função para obter nome da qualidade baseado no índice
   const getQualityName = (index: number) => {
-    if (bloggerStreams.length === 0) return `Qualidade ${index + 1}`;
-    
-    // Tentar detectar qualidade real da URL
-    const url = bloggerStreams[index];
-    const detectedQuality = detectQualityFromUrl(url);
-    
-    if (detectedQuality > 0) {
-      return `${detectedQuality}p`;
+    // Usar qualidades detectadas se disponíveis
+    if (detectedQualities.length > index && detectedQualities[index] > 0) {
+      const quality = detectedQualities[index];
+      return `${quality}p`;
     }
     
-    // Fallback: assumir ordem decrescente de qualidade
-    const fallbackQualities = ['1080p', '720p', '480p', '360p', '240p', '144p'];
+    // Fallback para detecção em tempo real
+    if (bloggerStreams.length > index) {
+      const url = bloggerStreams[index];
+      const detectedQuality = detectQualityFromUrl(url);
+      if (detectedQuality > 0) {
+        return `${detectedQuality}p`;
+      }
+    }
+    
+    // Fallback final: nomes genéricos ordenados
+    const fallbackQualities = ['Alta', 'Média', 'Baixa', 'Muito Baixa'];
     return fallbackQualities[index] || `Qualidade ${index + 1}`;
   };
 
