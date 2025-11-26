@@ -101,19 +101,37 @@ function detectQualityFromUrl(url: string, streamData?: any): number {
 // Função para analisar tamanho do arquivo (se disponível)
 async function analyzeStreamSize(url: string): Promise<number> {
   try {
-    const response = await fetch(url, { method: 'HEAD' });
-    const contentLength = response.headers.get('content-length');
-    if (contentLength) {
-      const sizeInMB = parseInt(contentLength) / (1024 * 1024);
-      // Estimar qualidade baseada no tamanho (muito aproximado)
-      if (sizeInMB > 500) return 1080;
-      if (sizeInMB > 200) return 720;
-      if (sizeInMB > 100) return 480;
-      if (sizeInMB > 50) return 360;
-      return 240;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000); // Timeout de 2s
+    
+    const response = await fetch(url, { 
+      method: 'HEAD',
+      signal: controller.signal,
+      headers: {
+        'Accept': '*/*',
+        'Range': 'bytes=0-0' // Tentar apenas o primeiro byte
+      }
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (response.ok) {
+      const contentLength = response.headers.get('content-length') || 
+                           response.headers.get('content-range')?.split('/')[1];
+      
+      if (contentLength) {
+        const sizeInMB = parseInt(contentLength) / (1024 * 1024);
+        // Estimar qualidade baseada no tamanho (muito aproximado)
+        if (sizeInMB > 500) return 1080;
+        if (sizeInMB > 200) return 720;
+        if (sizeInMB > 100) return 480;
+        if (sizeInMB > 50) return 360;
+        return 240;
+      }
     }
   } catch (error) {
-    // Ignorar erros de rede
+    // Ignorar erros de rede, CORS, timeout, etc.
+    console.debug('Não foi possível analisar tamanho do stream:', error instanceof Error ? error.message : String(error));
   }
   return 0;
 }
@@ -260,63 +278,67 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
 
       if (videoConfig && videoConfig.streams) {
         // Processar streams com detecção avançada
-        const processStreams = async () => {
-          const streams = await Promise.all(
-            videoConfig.streams.map(async (stream: any, index: number) => {
-              const url = stream.play_url || stream.url;
-              if (!url) return null;
+        const streams = await Promise.all(
+          videoConfig.streams.map(async (stream: any, index: number) => {
+            const url = stream.play_url || stream.url;
+            if (!url) return null;
 
-              // Tentar múltiplas estratégias de detecção
-              let detectedQuality = detectQualityFromUrl(url, stream);
-              
-              // Se não conseguiu detectar, tentar analisar tamanho do arquivo
-              if (detectedQuality === 0) {
-                detectedQuality = await analyzeStreamSize(url);
+            // Tentar múltiplas estratégias de detecção
+            let detectedQuality = detectQualityFromUrl(url, stream);
+            
+            // Se não conseguiu detectar, tentar analisar tamanho do arquivo (com timeout)
+            if (detectedQuality === 0) {
+              try {
+                detectedQuality = await Promise.race([
+                  analyzeStreamSize(url),
+                  new Promise<number>((resolve) => setTimeout(() => resolve(0), 3000)) // Timeout de 3s
+                ]);
+              } catch (error) {
+                console.warn('Erro ao analisar tamanho do stream:', error);
+                detectedQuality = 0;
               }
+            }
 
-              // Fallback baseado na posição (assumindo ordem comum)
-              if (detectedQuality === 0) {
-                const fallbackQualities = [1080, 720, 480, 360, 240];
-                detectedQuality = fallbackQualities[index] || (720 - (index * 120));
-              }
+            // Fallback baseado na posição (assumindo ordem comum)
+            if (detectedQuality === 0) {
+              const fallbackQualities = [1080, 720, 480, 360, 240];
+              detectedQuality = fallbackQualities[index] || (720 - (index * 120));
+            }
 
-              return {
-                url: url,
-                quality: detectedQuality,
-                originalIndex: index,
-                streamData: stream
-              };
-            })
-          );
+            return {
+              url: url,
+              quality: detectedQuality,
+              originalIndex: index,
+              streamData: stream
+            };
+          })
+        );
 
-          // Filtrar streams válidos
-          const validStreams = streams.filter((stream: any) => stream !== null);
+        // Filtrar streams válidos
+        const validStreams = streams.filter((stream: any) => stream !== null);
 
-          // Ordenar por qualidade (maior primeiro)
-          validStreams.sort((a: any, b: any) => b.quality - a.quality);
+        // Ordenar por qualidade (maior primeiro)
+        validStreams.sort((a: any, b: any) => b.quality - a.quality);
 
-          // Se todas as qualidades são iguais, manter ordem original
-          const uniqueQualities = [...new Set(validStreams.map((s: any) => s.quality))];
-          if (uniqueQualities.length === 1) {
-            validStreams.sort((a: any, b: any) => b.originalIndex - a.originalIndex);
-          }
+        // Se todas as qualidades são iguais, manter ordem original
+        const uniqueQualities = [...new Set(validStreams.map((s: any) => s.quality))];
+        if (uniqueQualities.length === 1) {
+          validStreams.sort((a: any, b: any) => b.originalIndex - a.originalIndex);
+        }
 
-          const streamUrls = validStreams.map((stream: any) => stream.url);
-          const qualities = validStreams.map((stream: any) => stream.quality);
-          
-          setBloggerStreams(streamUrls);
-          setDetectedQualities(qualities);
-          setSelectedQuality(0);
-          
-          console.log(`Encontrados ${streamUrls.length} streams do Blogger`);
-          console.log('Análise de qualidade:', validStreams.map((s: any) => ({ 
-            originalIndex: s.originalIndex, 
-            detectedQuality: s.quality,
-            url: s.url.substring(0, 100) + '...'
-          })));
-        };
-
-        processStreams();
+        const streamUrls = validStreams.map((stream: any) => stream.url);
+        const qualities = validStreams.map((stream: any) => stream.quality);
+        
+        setBloggerStreams(streamUrls);
+        setDetectedQualities(qualities);
+        setSelectedQuality(0);
+        
+        console.log(`Encontrados ${streamUrls.length} streams do Blogger`);
+        console.log('Análise de qualidade:', validStreams.map((s: any) => ({ 
+          originalIndex: s.originalIndex, 
+          detectedQuality: s.quality,
+          url: s.url.substring(0, 100) + '...'
+        })));
       } else {
         console.warn('VIDEO_CONFIG não encontrado ou sem streams');
       }
