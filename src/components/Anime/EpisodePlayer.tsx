@@ -5,7 +5,6 @@ import { useAuth } from '@/hooks/useAuth';
 import { animeService } from '@/services/animeService';
 import { getImageUrl } from '@/utils/helpers';
 import type { Episodio, LinkEpisodio } from '@/types/anime';
-import YouTube from 'react-youtube';
 
 // Função para extrair VIDEO_CONFIG de páginas do Blogger
 function extractVideoConfig(html: string) {
@@ -32,12 +31,6 @@ function extractVideoConfig(html: string) {
   }
 }
 
-// Função para extrair ID do vídeo do YouTube a partir da URL
-function getYouTubeVideoId(url: string): string | null {
-  const regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#&?]*).*/;
-  const match = url.match(regExp);
-  return (match && match[7].length === 11) ? match[7] : null;
-}
 
 interface EpisodePlayerProps {
   episodioId: number;
@@ -49,14 +42,12 @@ type VideoType = 'legendado' | 'dublado';
 export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
   const { isAuthenticated } = useAuth();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const youtubePlayerRef = useRef<any>(null);
   const [hasMarked, setHasMarked] = useState(false);
   const [poster, setPoster] = useState<string | undefined>(undefined);
   const [activeTab, setActiveTab] = useState<VideoType>('legendado');
   const [selectedLinkIndex, setSelectedLinkIndex] = useState<number>(0);
   const [bloggerStreams, setBloggerStreams] = useState<string[]>([]);
   const [isLoadingBlogger, setIsLoadingBlogger] = useState(false);
-  const [selectedStreamIndex, setSelectedStreamIndex] = useState<number>(0);
 
   // Obter links do novo sistema ou fallback para campos antigos
   const getLinksForType = (tipo: VideoType): LinkEpisodio[] => {
@@ -107,6 +98,12 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
 
   // Verifica se há vídeo dublado disponível
   const hasDubbedVideo = linksDublado.length > 0;
+
+  // Determinar o tipo de player baseado no provedor (padrão: iframe)
+  const playerType = currentLink?.provedor?.tipo || 'iframe';
+  const isBloggerPlayer = bloggerStreams.length > 0;
+  const isIframe = playerType === 'iframe' && !isBloggerPlayer;
+  const isVideoPlayer = playerType === 'video_player' || isBloggerPlayer;
 
   // Função para verificar se a URL é do Blogger
   const isBloggerUrl = (url: string): boolean => {
@@ -202,7 +199,6 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
   // Resetar índice do link quando mudar de tab
   useEffect(() => {
     setSelectedLinkIndex(0);
-    setSelectedStreamIndex(0);
   }, [activeTab]);
 
   // Processar URL do Blogger quando o link atual mudar
@@ -211,28 +207,36 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
       processBloggerUrl(currentLink.url);
     } else {
       setBloggerStreams([]);
-      setSelectedStreamIndex(0);
     }
   }, [currentLink?.url]);
 
-  // Funções do YouTube Player
-  const onYouTubeReady = (event: any) => {
-    youtubePlayerRef.current = event.target;
+  // Função para configurar múltiplas fontes no player HTML5
+  const setupVideoSources = () => {
+    const video = videoRef.current;
+    if (!video || bloggerStreams.length === 0) return;
+
+    // Limpar fontes existentes
+    video.innerHTML = '';
+
+    // Adicionar cada stream como uma fonte
+    bloggerStreams.forEach((streamUrl, index) => {
+      const source = document.createElement('source');
+      source.src = streamUrl;
+      source.type = 'video/mp4';
+      // Adicionar atributo de qualidade se possível detectar
+      source.setAttribute('data-quality', `${720 + (index * 360)}p`);
+      video.appendChild(source);
+    });
+
+    video.load();
   };
 
-  const onYouTubePlay = () => {
-    handlePlay();
-  };
-
-  const changeStream = (streamIndex: number) => {
-    setSelectedStreamIndex(streamIndex);
-    if (youtubePlayerRef.current && bloggerStreams[streamIndex]) {
-      const videoId = getYouTubeVideoId(bloggerStreams[streamIndex]);
-      if (videoId) {
-        youtubePlayerRef.current.loadVideoById(videoId);
-      }
+  // Configurar fontes quando streams do Blogger mudarem
+  useEffect(() => {
+    if (isBloggerPlayer && bloggerStreams.length > 0) {
+      setupVideoSources();
     }
-  };
+  }, [bloggerStreams, isBloggerPlayer]);
 
   const handlePlay = async () => {
     if (!isAuthenticated || hasMarked || !episodio) {
@@ -280,12 +284,6 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     );
   }
 
-  // Determinar o tipo de player baseado no provedor (padrão: iframe)
-  const playerType = currentLink.provedor?.tipo || 'iframe';
-  const isIframe = playerType === 'iframe' && bloggerStreams.length === 0;
-  const isVideoPlayer = playerType === 'video_player' && bloggerStreams.length === 0;
-  const isBloggerPlayer = bloggerStreams.length > 0;
-  const isYouTubePlayer = isBloggerPlayer;
 
   return (
     <div className="w-full">
@@ -339,29 +337,6 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
         </div>
       )}
 
-      {/* Seletor de Qualidade para Blogger */}
-      {isBloggerPlayer && bloggerStreams.length > 1 && (
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            Escolha a qualidade ({bloggerStreams.length} disponíveis):
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {bloggerStreams.map((stream, index) => (
-              <button
-                key={index}
-                onClick={() => changeStream(index)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  selectedStreamIndex === index
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                }`}
-              >
-                Qualidade {index + 1}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Player */}
       <div className="w-full aspect-video bg-black rounded-lg overflow-hidden">
@@ -369,43 +344,6 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
           <div className="w-full h-full flex items-center justify-center">
             <p className="text-gray-400">Carregando streams do Blogger...</p>
           </div>
-        ) : isYouTubePlayer && bloggerStreams.length > 0 ? (
-          (() => {
-            const currentStream = bloggerStreams[selectedStreamIndex];
-            const videoId = getYouTubeVideoId(currentStream);
-            
-            if (!videoId) {
-              return (
-                <div className="w-full h-full flex items-center justify-center">
-                  <p className="text-gray-400">URL do vídeo inválida</p>
-                </div>
-              );
-            }
-
-            return (
-              <YouTube
-                key={`${episodioId}-${activeTab}-${selectedLinkIndex}-${selectedStreamIndex}`}
-                videoId={videoId}
-                opts={{
-                  width: '100%',
-                  height: '100%',
-                  playerVars: {
-                    autoplay: 0,
-                    controls: 1,
-                    rel: 0,
-                    showinfo: 0,
-                    modestbranding: 1,
-                    fs: 1,
-                    cc_load_policy: 0,
-                    iv_load_policy: 3,
-                  },
-                }}
-                onReady={onYouTubeReady}
-                onPlay={onYouTubePlay}
-                className="w-full h-full"
-              />
-            );
-          })()
         ) : isIframe && currentLink.url ? (
           <iframe
             key={`${episodioId}-${activeTab}-${selectedLinkIndex}`}
@@ -416,16 +354,18 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
             title={`${episodio.titulo} - ${activeTab === 'dublado' ? 'Dublado' : 'Legendado'} - Player ${selectedLinkIndex + 1}`}
             onLoad={handleIframeLoad}
           />
-        ) : isVideoPlayer && currentLink.url ? (
+        ) : isVideoPlayer ? (
           <video
             ref={videoRef}
             key={`${episodioId}-${activeTab}-${selectedLinkIndex}`}
             controls
             className="w-full h-full"
             poster={poster}
-            src={currentLink.url}
+            src={!isBloggerPlayer ? currentLink.url : undefined}
             onPlay={handlePlay}
-          />
+          >
+            {/* As fontes múltiplas serão adicionadas dinamicamente via setupVideoSources */}
+          </video>
         ) : (
           <div className="w-full h-full flex items-center justify-center">
             <p className="text-gray-400">Nenhum vídeo disponível</p>
@@ -435,10 +375,10 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
 
       {/* Informações do player atual */}
       <div className="mt-2 text-sm text-gray-400">
-        {isYouTubePlayer && bloggerStreams.length > 0 ? (
+        {isBloggerPlayer && bloggerStreams.length > 0 ? (
           <span>
-            YouTube Player - Qualidade {selectedStreamIndex + 1} de {bloggerStreams.length}
-            {bloggerStreams.length > 1 && ' disponíveis'}
+            Player HTML5 - {bloggerStreams.length} qualidade(s) disponível(is)
+            {bloggerStreams.length > 1 && ' (use a engrenagem do player para alterar)'}
           </span>
         ) : currentLinks.length > 1 ? (
           <span>Player {selectedLinkIndex + 1} de {currentLinks.length}</span>
