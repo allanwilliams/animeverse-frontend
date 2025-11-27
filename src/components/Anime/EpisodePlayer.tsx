@@ -160,6 +160,8 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
   const [detectedQualities, setDetectedQualities] = useState<number[]>([]);
   const [isPlayerReady, setIsPlayerReady] = useState(false);
   const [currentVideoTime, setCurrentVideoTime] = useState<number>(0);
+  const [currentProgressPercentage, setCurrentProgressPercentage] = useState<number>(0);
+  const [isVideoVisible, setIsVideoVisible] = useState(false);
 
   // Obter links do novo sistema ou fallback para campos antigos
   const getLinksForType = (tipo: VideoType): LinkEpisodio[] => {
@@ -370,78 +372,158 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     setDetectedQualities([]);
     setIsPlayerReady(false); // Resetar estado do player
     setCurrentVideoTime(0); // Resetar progresso salvo
+    // NÃO resetar isVideoVisible aqui - será controlado pelo carregamento de progresso
   }, [episodioId]);
 
   // Carregar progresso salvo do episódio
   useEffect(() => {
     const carregarProgressoSalvo = async () => {
-      if (!isAuthenticated || !episodioId) return;
-
-      try {
-        console.log('🔄 Carregando progresso salvo para episódio:', episodioId);
-        const progressoData = await animeService.obterProgressoEpisodio(episodioId);
-        
-        if (progressoData.progresso !== null && progressoData.progresso > 0 && progressoData.progresso < 100) {
-          console.log(`📍 Progresso encontrado: ${progressoData.progresso}% - será aplicado quando o vídeo carregar`);
-          
-          // Aguardar o vídeo estar pronto e aplicar o progresso
-          const aplicarProgresso = () => {
-            const video = videoRef.current;
-            if (video && video.duration > 0 && progressoData.progresso !== null) {
-              const tempoSalvo = (progressoData.progresso / 100) * video.duration;
-              console.log(`⏰ Aplicando progresso salvo: ${tempoSalvo.toFixed(2)}s (${progressoData.progresso}%)`);
-              video.currentTime = tempoSalvo;
-              
-              // Mostrar notificação para o usuário
-              console.log(`✅ Vídeo retomado do minuto ${Math.floor(tempoSalvo / 60)}:${Math.floor(tempoSalvo % 60).toString().padStart(2, '0')}`);
-            }
-          };
-
-          // Aguardar o vídeo estar pronto e aplicar o progresso
-          const tentarAplicarProgresso = () => {
-            const video = videoRef.current;
-            if (video && video.duration > 0) {
-              aplicarProgresso();
-              return true; // Sucesso
-            }
-            return false; // Ainda não está pronto
-          };
-
-          // Tentar aplicar imediatamente
-          if (!tentarAplicarProgresso()) {
-            // Se não conseguiu, tentar a cada 500ms por até 10 segundos
-            let tentativas = 0;
-            const maxTentativas = 20; // 10 segundos
-            
-            const intervalo = setInterval(() => {
-              tentativas++;
-              
-              if (tentarAplicarProgresso()) {
-                clearInterval(intervalo);
-                console.log(`✅ Progresso aplicado na tentativa ${tentativas}`);
-              } else if (tentativas >= maxTentativas) {
-                clearInterval(intervalo);
-                console.log('⚠️ Timeout ao aguardar vídeo carregar para aplicar progresso');
-              }
-            }, 500);
-            
-            // Cleanup se o componente desmontar
-            return () => {
-              clearInterval(intervalo);
-            };
-          }
-        } else if (progressoData.progresso === 100) {
-          console.log('📺 Episódio já foi assistido completamente');
-        } else {
-          console.log('🆕 Episódio novo - começando do início');
-        }
-      } catch (error) {
-        console.error('❌ Erro ao carregar progresso salvo:', error);
+      const progressoData = await animeService.obterProgressoEpisodio(episodioId);
+      
+      if (progressoData.progresso !== null && progressoData.progresso > 0 && progressoData.progresso < 100) {
+        irParaProgresso(progressoData.progresso);
       }
     };
 
     carregarProgressoSalvo();
   }, [episodioId, isAuthenticated]);
+
+  const irParaProgresso = async (progresso: number) => {
+    console.log('progresso', progresso);
+    if (!isAuthenticated || !episodioId) {
+      // Garantir que vídeo seja visível quando não autenticado
+      //setIsVideoVisible(true);
+      return;
+    }
+
+    try {
+      console.log('🔄 Carregando progresso salvo para episódio:', episodioId);
+      
+      if (progresso > 0 && progresso < 100) {
+        console.log(`📍 Progresso encontrado: ${progresso}% - será aplicado quando o vídeo carregar`);
+        
+        // Ocultar vídeo enquanto aplica progresso
+        setIsVideoVisible(false);
+        
+        // Aguardar o vídeo estar pronto e aplicar o progresso
+        const aplicarProgresso = () => {
+          const video = videoRef.current;
+          console.log('video', video);
+          console.log('video.duration', video?.duration);
+          console.log('progresso', progresso);
+          if (video && video.duration > 0 && progresso !== null) {
+            const tempoSalvo = (progresso / 100) * video.duration;
+            console.log(`⏰ Aplicando progresso salvo: ${tempoSalvo.toFixed(2)}s (${progresso}%)`);
+            video.currentTime = tempoSalvo;
+            
+            // Aguardar APENAS pelos eventos de buffering - priorizar canplay
+            let timeoutId: NodeJS.Timeout;
+            
+            const handleCanPlay = () => {
+              console.log(`🎬 Evento 'canplay' disparado - vídeo pode começar a reproduzir`);
+              
+              // Limpar timeout e outros listeners
+              clearTimeout(timeoutId);
+              video.removeEventListener('canplay', handleCanPlay);
+              video.removeEventListener('canplaythrough', handleCanPlayThrough);
+              
+              // Verificar se currentTime também está correto
+              const tolerancia = 1;
+              if (Math.abs(video.currentTime - tempoSalvo) <= tolerancia) {
+                console.log(`✅ Vídeo liberado via evento canplay: currentTime=${video.currentTime}s`);
+                setIsVideoVisible(true);
+                
+                console.log(`✅ Vídeo retomado do minuto ${Math.floor(tempoSalvo / 60)}:${Math.floor(tempoSalvo % 60).toString().padStart(2, '0')}`);
+              } else {
+                console.log(`⚠️ canplay disparado mas currentTime incorreto: atual=${video.currentTime}s, esperado=${tempoSalvo}s`);
+                // Aguardar currentTime ser ajustado
+                setTimeout(() => {
+                  console.log(`✅ Vídeo liberado após ajuste de currentTime: ${video.currentTime}s`);
+                  //setIsVideoVisible(true);
+                }, 200);
+              }
+            };
+            
+            const handleCanPlayThrough = () => {
+              console.log(`🎬 Evento 'canplaythrough' disparado - vídeo totalmente carregado`);
+              
+              // Limpar timeout e outros listeners
+              clearTimeout(timeoutId);
+              video.removeEventListener('canplay', handleCanPlay);
+              video.removeEventListener('canplaythrough', handleCanPlayThrough);
+              
+              console.log(`✅ Vídeo liberado via evento canplaythrough: currentTime=${video.currentTime}s`);
+              //setIsVideoVisible(true);
+              
+              console.log(`✅ Vídeo retomado do minuto ${Math.floor(tempoSalvo / 60)}:${Math.floor(tempoSalvo % 60).toString().padStart(2, '0')}`);
+            };
+            
+            // Timeout de segurança (só como último recurso)
+            timeoutId = setTimeout(() => {
+              console.log(`⚠️ Timeout - eventos canplay não dispararam, liberando vídeo mesmo assim`);
+              video.removeEventListener('canplay', handleCanPlay);
+              video.removeEventListener('canplaythrough', handleCanPlayThrough);
+              //setIsVideoVisible(true);
+            }, 5000); // 5 segundos
+            
+            // Adicionar listeners para eventos de buffering (PRIORIDADE)
+            video.addEventListener('canplay', handleCanPlay, { once: true });
+            video.addEventListener('canplaythrough', handleCanPlayThrough, { once: true });
+            
+            console.log(`⏳ Aguardando eventos canplay/canplaythrough para liberar vídeo...`);
+          }
+        };
+
+        // Aguardar o vídeo estar pronto e aplicar o progresso
+        const tentarAplicarProgresso = () => {
+          const video = videoRef.current;
+          if (video && video.duration > 0) {
+            aplicarProgresso();
+            return true; // Sucesso
+          }
+          return false; // Ainda não está pronto
+        };
+
+        // Tentar aplicar imediatamente
+        if (!tentarAplicarProgresso()) {
+          // Se não conseguiu, tentar a cada 500ms por até 10 segundos
+          let tentativas = 0;
+          const maxTentativas = 20; // 10 segundos
+          
+          const intervalo = setInterval(() => {
+            tentativas++;
+            
+            if (tentarAplicarProgresso()) {
+              clearInterval(intervalo);
+              console.log(`✅ Progresso aplicado na tentativa ${tentativas}`);
+              // Mostrar vídeo após sucesso
+              //setIsVideoVisible(true);
+            } else if (tentativas >= maxTentativas) {
+              clearInterval(intervalo);
+              console.log('⚠️ Timeout ao aguardar vídeo carregar para aplicar progresso');
+              // Mostrar vídeo mesmo com timeout para não ficar oculto para sempre
+              //setIsVideoVisible(true);
+            }
+          }, 500);
+          
+          // Cleanup se o componente desmontar
+          return () => {
+            clearInterval(intervalo);
+          };
+        }
+      } else if (progresso === 100) {
+        console.log('📺 Episódio já foi assistido completamente');
+        // Vídeo será mostrado quando carregar (sem aguardar progresso específico)
+        //setIsVideoVisible(true);
+      } else {
+        console.log('🆕 Episódio novo - começando do início');
+        // Vídeo será mostrado quando carregar (sem aguardar progresso específico)
+        //setIsVideoVisible(true);
+      }
+    } catch (error) {
+      console.error('❌ Erro ao carregar progresso salvo:', error);
+    }
+  };
 
   // Preservar progresso e resetar índice do link quando mudar de tab
   useEffect(() => {
@@ -450,6 +532,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     if (video && video.currentTime > 0) {
       console.log(`💾 Salvando progresso atual antes de trocar tab: ${video.currentTime}s`);
       setCurrentVideoTime(video.currentTime);
+      setCurrentProgressPercentage((video.currentTime / video.duration) * 100);
     }
     
     setSelectedLinkIndex(0);
@@ -488,6 +571,10 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     if (video && video.currentTime > 0) {
       console.log(`💾 [QUALIDADE] Salvando progresso atual antes de trocar qualidade: ${video.currentTime}s (de ${qualityIndex === selectedQuality ? 'mesma' : getQualityName(selectedQuality)} para ${getQualityName(qualityIndex)})`);
       setCurrentVideoTime(video.currentTime);
+      const currentProgressPercentageRounded = Math.round((video.currentTime / video.duration) * 100);
+      setCurrentProgressPercentage(currentProgressPercentageRounded);
+      // Ocultar vídeo durante troca de qualidade
+      setIsVideoVisible(false);
     } else {
       console.log(`ℹ️ [QUALIDADE] Trocando qualidade sem progresso a salvar (currentTime: ${video?.currentTime || 'N/A'}s)`);
     }
@@ -503,6 +590,10 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     if (video && video.currentTime > 0) {
       console.log(`💾 Salvando progresso atual antes de trocar player: ${video.currentTime}s`);
       setCurrentVideoTime(video.currentTime);
+      const currentProgressPercentageRounded = Math.round((video.currentTime / video.duration) * 100);
+      setCurrentProgressPercentage(currentProgressPercentageRounded);
+      // Ocultar vídeo durante troca de player
+      setIsVideoVisible(false);
     }
     
     setSelectedLinkIndex(index);
@@ -515,6 +606,10 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     if (video && video.currentTime > 0) {
       console.log(`💾 Salvando progresso atual antes de trocar tab: ${video.currentTime}s`);
       setCurrentVideoTime(video.currentTime);
+      const currentProgressPercentageRounded = Math.round((video.currentTime / video.duration) * 100);
+      setCurrentProgressPercentage(currentProgressPercentageRounded);
+      // Ocultar vídeo durante troca de tab
+      setIsVideoVisible(false);
     }
     
     setActiveTab(tab);
@@ -546,65 +641,40 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
   useEffect(() => {
     if (isBloggerPlayer && bloggerStreams.length > 0 && videoRef.current) {
       const video = videoRef.current;
-      // Priorizar currentVideoTime (progresso salvo) sobre currentTime atual
-      const savedTime = currentVideoTime > 0 ? currentVideoTime : video.currentTime;
+      
+      console.log(`🔍 [QUALIDADE] useEffect executado - Estado atual: currentVideoTime=${currentVideoTime}s, video.currentTime=${video.currentTime}s, selectedQuality=${selectedQuality}`);
+      
       const wasPlaying = !video.paused;
       
-      console.log(`🔄 [QUALIDADE] Trocando para ${getQualityName(selectedQuality)} - progresso a ser preservado: ${savedTime}s`);
-      
+      console.log(`🔄 [QUALIDADE] Trocando para ${getQualityName(selectedQuality)} - Estado inicial: currentVideoTime=${currentVideoTime}s, video.currentTime=${video.currentTime}s`);
+      console.log('currentProgressPercentage', currentProgressPercentage);
+      console.log('video.duration', video.duration);
+      console.log('video.currentTime', video.currentTime);
       video.src = bloggerStreams[selectedQuality];
       video.load();
       
-      // Restaurar posição e estado de reprodução
-      const handleLoadedMetadata = () => {
-        if (savedTime > 0) {
-          video.currentTime = savedTime;
-          console.log(`✅ [QUALIDADE] Progresso restaurado após troca para ${getQualityName(selectedQuality)}: ${savedTime}s`);
-          // Limpar o progresso salvo após aplicar
-          if (currentVideoTime > 0) {
-            setCurrentVideoTime(0);
-          }
-        } else {
-          console.log(`ℹ️ [QUALIDADE] Nova qualidade ${getQualityName(selectedQuality)} carregada sem progresso a restaurar`);
-        }
-        if (wasPlaying) {
-          video.play().catch(console.error);
+      const carregarProgressoSalvo = async () => {
+        if (currentProgressPercentage > 0 && currentProgressPercentage < 100) {
+          irParaProgresso(currentProgressPercentage);
         }
       };
-      
-      video.addEventListener('loadedmetadata', handleLoadedMetadata, { once: true });
-      
-      // Cleanup
-      return () => {
-        video.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      };
+  
+      carregarProgressoSalvo();
     }
-  }, [selectedQuality, bloggerStreams, isBloggerPlayer, currentVideoTime]);
+  }, [selectedQuality, bloggerStreams, isBloggerPlayer]);
 
   // Aplicar progresso salvo quando trocar de player/tab
   useEffect(() => {
     const video = videoRef.current;
     if (video && currentVideoTime > 0) {
-      const applyProgress = () => {
-        if (video.duration > 0) {
-          video.currentTime = currentVideoTime;
-          console.log(`🔄 Progresso restaurado após troca de player/tab: ${currentVideoTime}s`);
-          setCurrentVideoTime(0); // Limpar após aplicar
+      const carregarProgressoSalvo = async () => {
+        
+        if (currentProgressPercentage > 0 && currentProgressPercentage < 100) {
+          irParaProgresso(currentProgressPercentage);
         }
       };
-
-      if (video.readyState >= 1) {
-        // Vídeo já carregou
-        applyProgress();
-      } else {
-        // Aguardar carregar
-        video.addEventListener('loadedmetadata', applyProgress, { once: true });
-      }
-
-      // Cleanup
-      return () => {
-        video.removeEventListener('loadedmetadata', applyProgress);
-      };
+  
+      carregarProgressoSalvo();
     }
   }, [selectedLinkIndex, activeTab, currentVideoTime]);
 
@@ -660,6 +730,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
       video.addEventListener('pause', handlePause);
       video.addEventListener('play', handlePlay);
       video.addEventListener('ended', handleEnded);
+      console.log(currentVideoTime);
     };
 
     if (video.readyState >= 1) {
@@ -918,11 +989,22 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
               ref={videoRef}
               key={`${episodioId}-${activeTab}-${selectedLinkIndex}-${selectedQuality}`}
               controls
-              className="w-full h-full"
+              className={`w-full h-full transition-opacity duration-300 ${isVideoVisible ? 'opacity-100' : 'opacity-0'}`}
               poster={poster}
               src={isBloggerPlayer ? bloggerStreams[selectedQuality] : currentLink.url}
               onPlay={handlePlay}
             />
+            
+            {/* Indicador de carregamento quando vídeo está oculto */}
+            {!isVideoVisible && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-75">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-500 mx-auto mb-4"></div>
+                  <p className="text-gray-300">Aplicando progresso...</p>
+                  <p className="text-gray-500 text-sm mt-2">Aguardando buffering do vídeo</p>
+                </div>
+              </div>
+            )}
             
             {/* Seletor de Qualidade Customizado para Blogger */}
             {isBloggerPlayer && bloggerStreams.length > 1 && (
