@@ -380,8 +380,10 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     const carregarProgressoSalvo = async () => {
       const progressoData = await animeService.obterProgressoEpisodio(episodioId);
       
-      if (progressoData.progresso !== null && progressoData.progresso > 0 && progressoData.progresso < 100) {
+      if (progressoData.progresso !== null && progressoData.progresso > 0) {
         irParaProgresso(progressoData.progresso);
+      }else{
+        irParaProgresso(0.01);
       }
     };
 
@@ -399,8 +401,8 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     try {
       console.log('🔄 Carregando progresso salvo para episódio:', episodioId);
       
-      if (progresso > 0 && progresso < 100) {
-        console.log(`📍 Progresso encontrado: ${progresso}% - será aplicado quando o vídeo carregar`);
+      if (progresso > 0) {
+        console.log(`📍 Progresso encontrado: ${progresso} - será aplicado quando o vídeo carregar`);
         
         // Ocultar vídeo enquanto aplica progresso
         setIsVideoVisible(false);
@@ -414,7 +416,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
           if (video && video.duration > 0 && progresso !== null) {
             const tempoSalvo = (progresso / 100) * video.duration;
             console.log(`⏰ Aplicando progresso salvo: ${tempoSalvo.toFixed(2)}s (${progresso}%)`);
-            video.currentTime = tempoSalvo;
+            video.currentTime = progresso;
             
             // Aguardar APENAS pelos eventos de buffering - priorizar canplay
             let timeoutId: NodeJS.Timeout;
@@ -429,13 +431,13 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
               
               // Verificar se currentTime também está correto
               const tolerancia = 1;
-              if (Math.abs(video.currentTime - tempoSalvo) <= tolerancia) {
+              if (Math.abs(video.currentTime - progresso) <= tolerancia) {
                 console.log(`✅ Vídeo liberado via evento canplay: currentTime=${video.currentTime}s`);
                 setIsVideoVisible(true);
-                
-                console.log(`✅ Vídeo retomado do minuto ${Math.floor(tempoSalvo / 60)}:${Math.floor(tempoSalvo % 60).toString().padStart(2, '0')}`);
+                videoRef.current?.play();
+                console.log(`✅ Vídeo retomado do minuto ${Math.floor(progresso / 60)}:${Math.floor(progresso % 60).toString().padStart(2, '0')}`);
               } else {
-                console.log(`⚠️ canplay disparado mas currentTime incorreto: atual=${video.currentTime}s, esperado=${tempoSalvo}s`);
+                console.log(`⚠️ canplay disparado mas currentTime incorreto: atual=${video.currentTime}s, esperado=${progresso}s`);
                 // Aguardar currentTime ser ajustado
                 setTimeout(() => {
                   console.log(`✅ Vídeo liberado após ajuste de currentTime: ${video.currentTime}s`);
@@ -455,7 +457,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
               console.log(`✅ Vídeo liberado via evento canplaythrough: currentTime=${video.currentTime}s`);
               //setIsVideoVisible(true);
               
-              console.log(`✅ Vídeo retomado do minuto ${Math.floor(tempoSalvo / 60)}:${Math.floor(tempoSalvo % 60).toString().padStart(2, '0')}`);
+              console.log(`✅ Vídeo retomado do minuto ${Math.floor(progresso / 60)}:${Math.floor(progresso % 60).toString().padStart(2, '0')}`);
             };
             
             // Timeout de segurança (só como último recurso)
@@ -467,8 +469,8 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
             }, 5000); // 5 segundos
             
             // Adicionar listeners para eventos de buffering (PRIORIDADE)
-            video.addEventListener('canplay', handleCanPlay, { once: true });
-            video.addEventListener('canplaythrough', handleCanPlayThrough, { once: true });
+            videoRef?.current?.addEventListener('canplay', handleCanPlay, { once: true });
+            videoRef?.current?.addEventListener('canplaythrough', handleCanPlayThrough, { once: true });
             
             console.log(`⏳ Aguardando eventos canplay/canplaythrough para liberar vídeo...`);
           }
@@ -511,15 +513,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
             clearInterval(intervalo);
           };
         }
-      } else if (progresso === 100) {
-        console.log('📺 Episódio já foi assistido completamente');
-        // Vídeo será mostrado quando carregar (sem aguardar progresso específico)
-        //setIsVideoVisible(true);
-      } else {
-        console.log('🆕 Episódio novo - começando do início');
-        // Vídeo será mostrado quando carregar (sem aguardar progresso específico)
-        //setIsVideoVisible(true);
-      }
+      } 
     } catch (error) {
       console.error('❌ Erro ao carregar progresso salvo:', error);
     }
@@ -655,7 +649,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
       
       const carregarProgressoSalvo = async () => {
         if (currentProgressPercentage > 0 && currentProgressPercentage < 100) {
-          irParaProgresso(currentProgressPercentage);
+          irParaProgresso(currentVideoTime);
         }
       };
   
@@ -670,7 +664,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
       const carregarProgressoSalvo = async () => {
         
         if (currentProgressPercentage > 0 && currentProgressPercentage < 100) {
-          irParaProgresso(currentProgressPercentage);
+          irParaProgresso(currentVideoTime);
         }
       };
   
@@ -678,78 +672,73 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     }
   }, [selectedLinkIndex, activeTab, currentVideoTime]);
 
+  const handlePlay = () => {
+    console.log('Vídeo reproduzindo - verificando se deve iniciar timer');
+    const isCurrentLinkBlogger = currentLink?.url ? isBloggerUrl(currentLink.url) : false;
+    const shouldUseTimer = isBloggerPlayer || isCurrentLinkBlogger;
+    
+    console.log('Estado atual:', { 
+      hasMarked, 
+      isBloggerPlayer, 
+      isCurrentLinkBlogger,
+      shouldUseTimer,
+      isAuthenticated,
+      bloggerStreamsLength: bloggerStreams.length,
+      timerJaRodando: !!progressIntervalRef.current
+    });
+    
+    if (shouldUseTimer && !progressIntervalRef.current) {
+      console.log('Episódio marcado como visto e é blogger - iniciando timer de progresso');
+      startProgressTimer();
+    } else if (hasMarked && !shouldUseTimer) {
+      console.log('Episódio marcado mas não é blogger - timer não necessário');
+    } else if (progressIntervalRef.current) {
+      console.log('Timer já está rodando - não iniciando novamente');
+    } else {
+      console.log('Episódio ainda não foi marcado como visto');
+    }
+  };
+
+  const handlePause = () => {
+    console.log('Vídeo pausado - parando timer de progresso');
+    stopProgressTimer();
+  };
+
+  const handleEnded = () => {
+    console.log('Vídeo terminou - parando timer e atualizando progresso para 100%');
+    stopProgressTimer();
+  };
   // Gerenciar timer de progresso para vídeos blogger
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !isBloggerPlayer || !isAuthenticated) return;
 
-    const handlePause = () => {
-      console.log('Vídeo pausado - parando timer de progresso');
-      stopProgressTimer();
-    };
-
-    const handlePlay = () => {
-      console.log('Vídeo reproduzindo - verificando se deve iniciar timer');
-      const isCurrentLinkBlogger = currentLink?.url ? isBloggerUrl(currentLink.url) : false;
-      const shouldUseTimer = isBloggerPlayer || isCurrentLinkBlogger;
-      
-      console.log('Estado atual:', { 
-        hasMarked, 
-        isBloggerPlayer, 
-        isCurrentLinkBlogger,
-        shouldUseTimer,
-        isAuthenticated,
-        bloggerStreamsLength: bloggerStreams.length,
-        timerJaRodando: !!progressIntervalRef.current
-      });
-      
-      if (hasMarked && shouldUseTimer && !progressIntervalRef.current) {
-        console.log('Episódio marcado como visto e é blogger - iniciando timer de progresso');
-        startProgressTimer();
-      } else if (hasMarked && !shouldUseTimer) {
-        console.log('Episódio marcado mas não é blogger - timer não necessário');
-      } else if (progressIntervalRef.current) {
-        console.log('Timer já está rodando - não iniciando novamente');
-      } else {
-        console.log('Episódio ainda não foi marcado como visto');
-      }
-    };
-
-    const handleEnded = () => {
-      console.log('Vídeo terminou - parando timer e atualizando progresso para 100%');
-      stopProgressTimer();
-      // Atualizar progresso para 100% quando o vídeo terminar
-      if (video.duration > 0) {
-        updateProgress(video.duration, video.duration);
-      }
-    };
-
     // Adicionar event listeners apenas quando o vídeo estiver pronto
     const handleLoadedMetadata = () => {
       console.log('Vídeo carregado - adicionando event listeners');
-      video.addEventListener('pause', handlePause);
-      video.addEventListener('play', handlePlay);
-      video.addEventListener('ended', handleEnded);
+      videoRef.current?.addEventListener('pause', handlePause);
+      videoRef.current?.addEventListener('play', handlePlay);
+      videoRef.current?.addEventListener('ended', handleEnded);
       console.log(currentVideoTime);
     };
 
-    if (video.readyState >= 1) {
+    if (videoRef.current?.readyState && videoRef.current?.readyState >= 1) {
       // Vídeo já está carregado
       handleLoadedMetadata();
     } else {
       // Aguardar o vídeo carregar
-      video.addEventListener('loadedmetadata', handleLoadedMetadata, { once: true });
+      videoRef.current?.addEventListener('loadedmetadata', handleLoadedMetadata, { once: true });
     }
 
     // Cleanup
     return () => {
-      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
-      video.removeEventListener('pause', handlePause);
-      video.removeEventListener('play', handlePlay);
-      video.removeEventListener('ended', handleEnded);
+      videoRef.current?.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      videoRef.current?.removeEventListener('pause', handlePause);
+      videoRef.current?.removeEventListener('play', handlePlay);
+      videoRef.current?.removeEventListener('ended', handleEnded);
       stopProgressTimer();
     };
-  }, [isBloggerPlayer, isAuthenticated, bloggerStreams]);
+  }, [isBloggerPlayer, isAuthenticated, bloggerStreams, selectedLinkIndex,activeTab,selectedQuality]);
 
   // Limpeza geral quando o componente for desmontado
   useEffect(() => {
@@ -759,20 +748,18 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
   }, []);
 
   // Função para atualizar progresso do vídeo
-  const updateProgress = async (currentTime: number, duration: number) => {
-    console.log('updateProgress chamada:', { currentTime, duration, isAuthenticated, hasEpisodio: !!episodio });
+  const updateProgress = async (currentTime: number) => {
+    console.log('updateProgress chamada:', { currentTime, isAuthenticated, hasEpisodio: !!episodio });
     
-    if (!isAuthenticated || !episodio || !duration) {
+    if (!isAuthenticated || !episodio) {
       console.log('updateProgress cancelada - condições não atendidas');
       return;
     }
     
-    const progressPercent = Math.round((currentTime / duration) * 100);
-    console.log(`Calculando progresso: ${currentTime}s / ${duration}s = ${progressPercent}%`);
     
     try {
-      await animeService.atualizarProgressoEpisodio(episodioId, progressPercent);
-      console.log(`✅ Progresso atualizado com sucesso: ${progressPercent}%`);
+      await animeService.atualizarProgressoEpisodio(episodioId, currentTime);
+      console.log(`✅ Progresso atualizado com sucesso: ${currentTime}%`);
     } catch (error: any) {
       console.error('❌ Erro ao atualizar progresso:', error);
     }
@@ -806,7 +793,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
       const video = videoRef.current;
       if (video && !video.paused && video.duration > 0) {
         console.log(`Atualizando progresso: ${video.currentTime}s / ${video.duration}s`);
-        updateProgress(video.currentTime, video.duration);
+        updateProgress(Number(video.currentTime.toFixed(2)));
       } else {
         console.log('Vídeo pausado ou sem duração - pulando atualização de progresso');
       }
@@ -821,70 +808,71 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
       clearInterval(progressIntervalRef.current);
       progressIntervalRef.current = null;
       console.log('Timer de progresso parado');
+      updateProgress(Number(videoRef.current?.currentTime?.toFixed(2) || 0));
     }
   };
 
-  const handlePlay = async () => {
-    if (!isAuthenticated || hasMarked || !episodio) {
-      console.log('Não marcando como visto:', { isAuthenticated, hasMarked, hasEpisodio: !!episodio });
-      return;
-    }
+  // const handlePlay = async () => {
+  //   if (!isAuthenticated || hasMarked || !episodio) {
+  //     console.log('Não marcando como visto:', { isAuthenticated, hasMarked, hasEpisodio: !!episodio });
+  //     return;
+  //   }
     
-    try {
-      console.log('Verificando se episódio já tem progresso salvo antes de marcar como visto:', episodioId);
+  //   try {
+  //     console.log('Verificando se episódio já tem progresso salvo antes de marcar como visto:', episodioId);
       
-      // Verificar se já existe progresso salvo para este episódio
-      const progressoExistente = await animeService.obterProgressoEpisodio(episodioId);
+  //     // Verificar se já existe progresso salvo para este episódio
+  //     const progressoExistente = await animeService.obterProgressoEpisodio(episodioId);
       
-      if (progressoExistente.progresso !== null) {
-        console.log(`📍 Episódio já tem progresso salvo (${progressoExistente.progresso}%) - não sobrescrevendo`);
-        setHasMarked(true);
+  //     if (progressoExistente.progresso !== null) {
+  //       console.log(`📍 Episódio já tem progresso salvo (${progressoExistente.progresso}%) - não sobrescrevendo`);
+  //       setHasMarked(true);
         
-        // Para episódios blogger, iniciar timer mesmo se já tem progresso
-        const isCurrentLinkBlogger = currentLink?.url ? isBloggerUrl(currentLink.url) : false;
-        const shouldUseProgressTracking = isBloggerPlayer || isCurrentLinkBlogger;
+  //       // Para episódios blogger, iniciar timer mesmo se já tem progresso
+  //       const isCurrentLinkBlogger = currentLink?.url ? isBloggerUrl(currentLink.url) : false;
+  //       const shouldUseProgressTracking = isBloggerPlayer || isCurrentLinkBlogger;
         
-        if (shouldUseProgressTracking) {
-          console.log('🎯 Iniciando timer para episódio com progresso existente');
-          startProgressTimer();
-        }
-        return;
-      }
+  //       if (shouldUseProgressTracking) {
+  //         console.log('🎯 Iniciando timer para episódio com progresso existente');
+  //         startProgressTimer();
+  //       }
+  //       return;
+  //     }
       
-      // Se não tem progresso salvo, marcar como visto pela primeira vez
-      console.log('🆕 Primeira vez assistindo - marcando episódio como visto:', episodioId);
-      console.log('Estado no handlePlay:', {
-        isBloggerPlayer,
-        bloggerStreamsLength: bloggerStreams.length,
-        currentLinkUrl: currentLink?.url,
-        isBloggerUrl: currentLink?.url ? isBloggerUrl(currentLink.url) : false
-      });
+  //     // Se não tem progresso salvo, marcar como visto pela primeira vez
+  //     console.log('🆕 Primeira vez assistindo - marcando episódio como visto:', episodioId);
+  //     console.log('Estado no handlePlay:', {
+  //       isBloggerPlayer,
+  //       bloggerStreamsLength: bloggerStreams.length,
+  //       currentLinkUrl: currentLink?.url,
+  //       isBloggerUrl: currentLink?.url ? isBloggerUrl(currentLink.url) : false
+  //     });
       
-      // Para episódios blogger, marcar com progresso 0 inicialmente
-      // Para outros tipos, manter o comportamento padrão (100%)
-      // Usar verificação mais robusta baseada na URL
-      const isCurrentLinkBlogger = currentLink?.url ? isBloggerUrl(currentLink.url) : false;
-      const shouldUseProgressTracking = isBloggerPlayer || isCurrentLinkBlogger;
-      const progressoInicial = shouldUseProgressTracking ? 0 : 100;
+  //     // Para episódios blogger, marcar com progresso 0 inicialmente
+  //     // Para outros tipos, manter o comportamento padrão (100%)
+  //     // Usar verificação mais robusta baseada na URL
+  //     const isCurrentLinkBlogger = currentLink?.url ? isBloggerUrl(currentLink.url) : false;
+  //     const shouldUseProgressTracking = isBloggerPlayer || isCurrentLinkBlogger;
+  //     const progressoInicial = shouldUseProgressTracking ? 0 : 100;
       
-      console.log(`Progresso inicial calculado: ${progressoInicial}% (shouldUseProgressTracking: ${shouldUseProgressTracking})`);
+  //     console.log(`Progresso inicial calculado: ${progressoInicial}% (shouldUseProgressTracking: ${shouldUseProgressTracking})`);
       
-      await animeService.marcarEpisodioVisto(episodioId, progressoInicial);
-      setHasMarked(true);
-      console.log(`Episódio marcado como visto com progresso inicial: ${progressoInicial}%`);
+  //     await animeService.marcarEpisodioVisto(episodioId, progressoInicial);
+  //     setHasMarked(true);
+  //     console.log(`Episódio marcado como visto com progresso inicial: ${progressoInicial}%`);
       
-      // Iniciar timer imediatamente após marcar como visto para episódios blogger
-      if (shouldUseProgressTracking) {
-        console.log('🎯 Iniciando timer imediatamente após marcar como visto');
-        startProgressTimer();
-      }
-    } catch (error: any) {
-      console.error('Erro ao marcar episódio como visto:', error);
-      console.error('URL tentada:', `/episodios/${episodioId}/marcar-visto/`);
-      console.error('Response:', error.response?.data);
-      console.error('Status:', error.response?.status);
-    }
-  };
+  //     // Iniciar timer imediatamente após marcar como visto para episódios blogger
+  //     if (shouldUseProgressTracking) {
+  //       console.log('🎯 Iniciando timer imediatamente após marcar como visto');
+  //       startProgressTimer();
+  //     }
+  //   } catch (error: any) {
+  //     console.error('Erro ao marcar episódio como visto:', error);
+  //     console.error('URL tentada:', `/episodios/${episodioId}/marcar-visto/`);
+  //     console.error('Response:', error.response?.data);
+  //     console.error('Status:', error.response?.status);
+  //   }
+  // };
 
   // Marcar episódio como visto quando iframe carregar
   const handleIframeLoad = () => {
