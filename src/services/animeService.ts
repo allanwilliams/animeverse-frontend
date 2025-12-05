@@ -117,11 +117,12 @@ export const animeService = {
     return response.data;
   },
 
-  atualizarProgressoEpisodio: async (episodioId: number, progresso: number): Promise<any> => {
+  atualizarProgressoEpisodio: async (episodioId: number, progresso: number, progressoPorcentagem: number): Promise<any> => {
     // Usar API route do Next.js para ocultar a rota do backend
     // Não usar barra no final para evitar redirect 308 do Next.js
     const response = await api.patch<any>(`/api/episodios/${episodioId}/atualizar-progresso`, {
       progresso,
+      progressoPorcentagem,
     });
     return response.data;
   },

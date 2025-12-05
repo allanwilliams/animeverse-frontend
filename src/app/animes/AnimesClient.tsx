@@ -87,6 +87,7 @@ export function AnimesClient({
         search: appliedSearch || undefined,
         genero: appliedGeneros,
         status: appliedStatuses,
+        ordering: 'titulo',
       });
       setData(result);
     } catch (error) {

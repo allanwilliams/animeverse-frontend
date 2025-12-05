@@ -39,6 +39,7 @@ export default async function AnimesPage({ searchParams }: AnimesPageProps) {
       search: search || undefined,
       genero: generosFilter,
       status: statusesFilter,
+      ordering: 'titulo',
     }),
     getFavoritosServer(),
   ]);

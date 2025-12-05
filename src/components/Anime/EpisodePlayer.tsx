@@ -158,6 +158,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
   const [selectedQuality, setSelectedQuality] = useState<number>(0);
   const [showQualitySelector, setShowQualitySelector] = useState(false);
   const [detectedQualities, setDetectedQualities] = useState<number[]>([]);
+  const [showUnifiedMenu, setShowUnifiedMenu] = useState(false);
   const [isPlayerReady, setIsPlayerReady] = useState(false);
   const [currentVideoTime, setCurrentVideoTime] = useState<number>(0);
   const [currentProgressPercentage, setCurrentProgressPercentage] = useState<number>(0);
@@ -381,7 +382,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
       const progressoData = await animeService.obterProgressoEpisodio(episodioId);
       
       if (progressoData.progresso !== null && progressoData.progresso > 0) {
-        irParaProgresso(progressoData.progresso);
+        irParaProgresso(progressoData.progresso);                                                                                                                                                                                                                                                                                                                           
       }else{
         irParaProgresso(0.01);
       }
@@ -531,21 +532,21 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     
     setSelectedLinkIndex(0);
     setSelectedQuality(0);
-    setShowQualitySelector(false);
+    setShowUnifiedMenu(false);
     setDetectedQualities([]);
   }, [activeTab]);
 
-  // Fechar seletor de qualidade quando clicar fora
+  // Fechar seletor unificado quando clicar fora
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (showQualitySelector) {
-        setShowQualitySelector(false);
+      if (showUnifiedMenu) {
+        setShowUnifiedMenu(false);
       }
     };
 
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
-  }, [showQualitySelector]);
+  }, [showUnifiedMenu]);
 
   // Processar URL do Blogger quando o link atual mudar
   useEffect(() => {
@@ -574,7 +575,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     }
     
     setSelectedQuality(qualityIndex);
-    setShowQualitySelector(false);
+    setShowUnifiedMenu(false);
   };
 
   // Função para trocar de player preservando progresso
@@ -591,6 +592,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     }
     
     setSelectedLinkIndex(index);
+    setShowUnifiedMenu(false);
   };
 
   // Função para trocar de tab preservando progresso
@@ -607,6 +609,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     }
     
     setActiveTab(tab);
+    setShowUnifiedMenu(false);
   };
 
   // Função para obter nome da qualidade baseado no índice
@@ -758,12 +761,15 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     
     
     try {
-      await animeService.atualizarProgressoEpisodio(episodioId, currentTime);
-      console.log(`✅ Progresso atualizado com sucesso: ${currentTime}%`);
+      if (currentTime > 0) {
+        const progressoPorcentagem = Math.round(currentTime / (videoRef?.current?.duration || 0) * 100);
+        await animeService.atualizarProgressoEpisodio(episodioId, currentTime, progressoPorcentagem);
+        console.log(`✅ Progresso atualizado com sucesso: ${currentTime}%`);
+      }
     } catch (error: any) {
       console.error('❌ Erro ao atualizar progresso:', error);
     }
-  };
+  }
 
   // Função para iniciar o timer de progresso (apenas para vídeos blogger)
   const startProgressTimer = () => {
@@ -808,7 +814,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
       clearInterval(progressIntervalRef.current);
       progressIntervalRef.current = null;
       console.log('Timer de progresso parado');
-      updateProgress(Number(videoRef.current?.currentTime?.toFixed(2) || 0));
+      updateProgress(Number(videoRef.current?.currentTime?.toFixed(2)));
     }
   };
 
@@ -902,61 +908,115 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
   }
 
 
+  // Verificar se há opções para mostrar no menu unificado
+  const hasMultipleOptions = 
+    hasDubbedVideo || 
+    currentLinks.length > 1 || 
+    (isBloggerPlayer && bloggerStreams.length > 1);
+
+  // Função para obter o texto do botão
+  const getButtonText = () => {
+    if (isBloggerPlayer && bloggerStreams.length > 1) {
+      return getQualityName(selectedQuality);
+    }
+    if (currentLinks.length > 1) {
+      return `Player ${selectedLinkIndex + 1}`;
+    }
+    if (hasDubbedVideo) {
+      return activeTab === 'legendado' ? 'Legendado' : 'Dublado';
+    }
+    return 'Configurações';
+  };
+
   return (
     <div className="w-full">
-      {/* Tabs */}
-      {hasDubbedVideo && (
-        <div className="flex gap-1 mb-4">
-          <button
-            onClick={() => changeTab('legendado')}
-            className={`px-6 py-3 rounded-t-lg font-semibold transition-all duration-200 border-b-2 ${
-              activeTab === 'legendado'
-                ? 'bg-purple-600 text-white border-purple-400 shadow-lg'
-                : 'bg-gray-800 text-gray-300 border-transparent hover:bg-gray-700 hover:text-white'
-            }`}
-          >
-            Legendado {linksLegendado.length > 1 && `(${linksLegendado.length})`}
-          </button>
-          <button
-            onClick={() => changeTab('dublado')}
-            className={`px-6 py-3 rounded-t-lg font-semibold transition-all duration-200 border-b-2 ${
-              activeTab === 'dublado'
-                ? 'bg-purple-600 text-white border-purple-400 shadow-lg'
-                : 'bg-gray-800 text-gray-300 border-transparent hover:bg-gray-700 hover:text-white'
-            }`}
-          >
-            Dublado {linksDublado.length > 1 && `(${linksDublado.length})`}
-          </button>
-        </div>
-      )}
-
-      {/* Seletor de Fontes */}
-      {currentLinks.length > 1 && (
-        <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-300 mb-2">
-            Escolha o player ({currentLinks.length} disponíveis):
-          </label>
-          <div className="flex flex-wrap gap-2">
-            {currentLinks.map((link, index) => (
-              <button
-                key={link.id || index}
-                onClick={() => changePlayer(index)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  selectedLinkIndex === index
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
-                }`}
-              >
-                Player {index + 1}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
 
       {/* Player */}
       <div className="w-full aspect-video bg-black rounded-lg overflow-hidden relative">
+        {/* Menu Unificado de Configurações - Para Iframe também */}
+        {hasMultipleOptions && isIframe && (
+          <div className="absolute top-4 right-4 z-10">
+            <div className="relative">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowUnifiedMenu(!showUnifiedMenu);
+                }}
+                className="bg-black bg-opacity-70 text-white px-3 py-2 rounded-lg flex items-center gap-2 hover:bg-opacity-90 transition-all"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                <span className="text-sm">{getButtonText()}</span>
+                <svg className={`w-4 h-4 transition-transform ${showUnifiedMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              
+              {showUnifiedMenu && (
+                <div className="absolute top-full right-0 mt-2 bg-black bg-opacity-95 rounded-lg overflow-hidden min-w-[180px] z-50 shadow-xl border border-gray-700">
+                  {/* Seção de Idioma */}
+                  {hasDubbedVideo && (
+                    <>
+                      <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-gray-700">
+                        Idioma
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          changeTab('legendado');
+                        }}
+                        className={`w-full px-4 py-2 text-left text-sm hover:bg-white hover:bg-opacity-20 transition-colors ${
+                          activeTab === 'legendado' ? 'bg-purple-600 text-white' : 'text-gray-300'
+                        }`}
+                      >
+                        Legendado {linksLegendado.length > 1 && `(${linksLegendado.length})`}
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          changeTab('dublado');
+                        }}
+                        className={`w-full px-4 py-2 text-left text-sm hover:bg-white hover:bg-opacity-20 transition-colors ${
+                          activeTab === 'dublado' ? 'bg-purple-600 text-white' : 'text-gray-300'
+                        }`}
+                      >
+                        Dublado {linksDublado.length > 1 && `(${linksDublado.length})`}
+                      </button>
+                    </>
+                  )}
+                  
+                  {/* Seção de Player/Fonte */}
+                  {currentLinks.length > 1 && (
+                    <>
+                      {hasDubbedVideo && <div className="border-t border-gray-700"></div>}
+                      <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-gray-700">
+                        Player
+                      </div>
+                      {currentLinks.map((link, index) => (
+                        <button
+                          key={link.id || index}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            changePlayer(index);
+                          }}
+                          className={`w-full px-4 py-2 text-left text-sm hover:bg-white hover:bg-opacity-20 transition-colors ${
+                            selectedLinkIndex === index ? 'bg-purple-600 text-white' : 'text-gray-300'
+                          }`}
+                        >
+                          Player {index + 1}
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+        
         {isLoadingBlogger ? (
           <div className="w-full h-full flex items-center justify-center">
             <p className="text-gray-400">Carregando stream...</p>
@@ -994,34 +1054,115 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
               </div>
             )}
             
-            {/* Seletor de Qualidade Customizado para Blogger */}
-            {isBloggerPlayer && bloggerStreams.length > 1 && (
+            {/* Menu Unificado de Configurações */}
+            {hasMultipleOptions && (
               <div className="absolute top-4 right-4">
                 <div className="relative">
                   <button
-                    onClick={() => setShowQualitySelector(!showQualitySelector)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowUnifiedMenu(!showUnifiedMenu);
+                    }}
                     className="bg-black bg-opacity-70 text-white px-3 py-2 rounded-lg flex items-center gap-2 hover:bg-opacity-90 transition-all"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
-                    <span className="text-sm">{getQualityName(selectedQuality)}</span>
+                    <span className="text-sm">{getButtonText()}</span>
+                    <svg className={`w-4 h-4 transition-transform ${showUnifiedMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
                   </button>
                   
-                  {showQualitySelector && (
-                    <div className="absolute top-full right-0 mt-2 bg-black bg-opacity-90 rounded-lg overflow-hidden min-w-[120px] z-10">
-                      {bloggerStreams.map((_, index) => (
-                        <button
-                          key={index}
-                          onClick={() => changeQuality(index)}
-                          className={`w-full px-4 py-2 text-left text-sm hover:bg-white hover:bg-opacity-20 transition-colors ${
-                            selectedQuality === index ? 'bg-purple-600 text-white' : 'text-gray-300'
-                          }`}
-                        >
-                          {getQualityName(index)}
-                        </button>
-                      ))}
+                  {showUnifiedMenu && (
+                    <div className="absolute top-full right-0 mt-2 bg-black bg-opacity-95 rounded-lg overflow-hidden min-w-[180px] z-50 shadow-xl border border-gray-700">
+                      {/* Seção de Idioma */}
+                      {hasDubbedVideo && (
+                        <>
+                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-gray-700">
+                            Idioma
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              changeTab('legendado');
+                            }}
+                            className={`w-full px-4 py-2 text-left text-sm transition-all duration-200 ${
+                              activeTab === 'legendado' 
+                                ? 'bg-purple-600 text-white' 
+                                : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                            }`}
+                          >
+                            Legendado {linksLegendado.length > 1 && `(${linksLegendado.length})`}
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              changeTab('dublado');
+                            }}
+                            className={`w-full px-4 py-2 text-left text-sm transition-all duration-200 ${
+                              activeTab === 'dublado' 
+                                ? 'bg-purple-600 text-white' 
+                                : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                            }`}
+                          >
+                            Dublado {linksDublado.length > 1 && `(${linksDublado.length})`}
+                          </button>
+                        </>
+                      )}
+                      
+                      {/* Seção de Player/Fonte */}
+                      {currentLinks.length > 1 && (
+                        <>
+                          {hasDubbedVideo && <div className="border-t border-gray-700"></div>}
+                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-gray-700">
+                            Player
+                          </div>
+                          {currentLinks.map((link, index) => (
+                            <button
+                              key={link.id || index}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                changePlayer(index);
+                              }}
+                              className={`w-full px-4 py-2 text-left text-sm transition-all duration-200 ${
+                                selectedLinkIndex === index 
+                                  ? 'bg-purple-600 text-white' 
+                                  : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                              }`}
+                            >
+                              Player {index + 1}
+                            </button>
+                          ))}
+                        </>
+                      )}
+                      
+                      {/* Seção de Qualidade */}
+                      {isBloggerPlayer && bloggerStreams.length > 1 && (
+                        <>
+                          {(hasDubbedVideo || currentLinks.length > 1) && <div className="border-t border-gray-700"></div>}
+                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-gray-700">
+                            Qualidade
+                          </div>
+                          {bloggerStreams.map((_, index) => (
+                            <button
+                              key={index}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                changeQuality(index);
+                              }}
+                              className={`w-full px-4 py-2 text-left text-sm transition-all duration-200 ${
+                                selectedQuality === index 
+                                  ? 'bg-purple-600 text-white' 
+                                  : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                              }`}
+                            >
+                              {getQualityName(index)}
+                            </button>
+                          ))}
+                        </>
+                      )}
                     </div>
                   )}
                 </div>

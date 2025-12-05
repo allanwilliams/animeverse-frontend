@@ -7,6 +7,7 @@ export interface ContinuarAssistindo {
   ultimo_episodio_numero: number;
   temporada_numero: number | null;
   progresso: number;
+  progresso_porcentagem: number;
   data_ultima_visualizacao: string;
 }
 

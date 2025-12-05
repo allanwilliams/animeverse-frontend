@@ -63,7 +63,7 @@ export function ContinuarAssistindo({ items, emptyMessage = 'Nenhum anime em and
               <div className="w-full bg-gray-700 rounded-full h-1.5">
                 <div
                   className="bg-purple-600 h-1.5 rounded-full transition-all"
-                  style={{ width: `${item.progresso}%` }}
+                  style={{ width: `${item.progresso_porcentagem}%` }}
                 />
               </div>
             </div>
