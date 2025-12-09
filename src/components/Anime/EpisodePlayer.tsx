@@ -5,6 +5,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { animeService } from '@/services/animeService';
 import { getImageUrl } from '@/utils/helpers';
 import type { Episodio, LinkEpisodio } from '@/types/anime';
+import Hls from 'hls.js';
 
 // Função para extrair VIDEO_CONFIG de páginas do Blogger
 function extractVideoConfig(html: string) {
@@ -149,6 +150,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
   const { isAuthenticated } = useAuth();
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const hlsRef = useRef<Hls | null>(null);
   const [hasMarked, setHasMarked] = useState(false);
   const [poster, setPoster] = useState<string | undefined>(undefined);
   const [activeTab, setActiveTab] = useState<VideoType>('legendado');
@@ -163,6 +165,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
   const [currentVideoTime, setCurrentVideoTime] = useState<number>(0);
   const [currentProgressPercentage, setCurrentProgressPercentage] = useState<number>(0);
   const [isVideoVisible, setIsVideoVisible] = useState(false);
+  const [animesDigitalUrl, setAnimesDigitalUrl] = useState<string | null>(null);
 
   // Obter links do novo sistema ou fallback para campos antigos
   const getLinksForType = (tipo: VideoType): LinkEpisodio[] => {
@@ -216,15 +219,58 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
 
   // Determinar o tipo de player baseado no provedor (padrão: iframe)
   const playerType = currentLink?.provedor?.tipo || 'iframe';
+  const isAnimesDigital = currentLink?.provedor?.id === 4;
   const isBloggerPlayer = bloggerStreams.length > 0;
-  const isIframe = playerType === 'iframe' && !isBloggerPlayer;
-  const isVideoPlayer = playerType === 'video_player' || isBloggerPlayer;
+  const isAnimesDigitalPlayer = isAnimesDigital && animesDigitalUrl !== null;
+  const isIframe = playerType === 'iframe' && !isBloggerPlayer && !isAnimesDigitalPlayer;
+  const isVideoPlayer = playerType === 'video_player' || isBloggerPlayer || isAnimesDigitalPlayer;
 
   // Função para verificar se a URL é do Blogger
   const isBloggerUrl = (url: string): boolean => {
     // Só verificar se o usuário estiver autenticado
     if (!isAuthenticated) return false;
     return url.includes('blogger') || url.includes('blogspot');
+  };
+
+  // Função para verificar se é provedor Animes Digital
+  const isAnimesDigitalProvider = (provedor: { id: number } | null | undefined): boolean => {
+    // Só verificar se o usuário estiver autenticado
+    if (!isAuthenticated) return false;
+    return provedor?.id === 4;
+  };
+
+  // Função para processar URL do Animes Digital
+  const processAnimesDigitalUrl = (url: string): string | null => {
+    // Só processar se o usuário estiver autenticado
+    if (!isAuthenticated) return null;
+
+    try {
+      // Verificar se a URL contém o prefixo esperado
+      const prefix = 'https://api.anivideo.net/videohls.php?d=';
+      if (!url.startsWith(prefix)) {
+        return null;
+      }
+
+      // Extrair o link do vídeo após o prefixo
+      let videoUrlWithParams = url.substring(prefix.length);
+      
+      // Tentar decodificar a URL se estiver codificada
+      try {
+        videoUrlWithParams = decodeURIComponent(videoUrlWithParams);
+      } catch (e) {
+        // Se falhar, usar a URL original (já está decodificada)
+        console.log('URL já está decodificada ou não precisa de decodificação');
+      }
+      
+      // Remover o parâmetro &nocache... se existir (pode estar no final ou codificado)
+      const videoUrl = videoUrlWithParams.replace(/&nocache\d+$/i, '').replace(/%26nocache\d+$/i, '');
+      
+      console.log('URL do Animes Digital processada:', videoUrl);
+      return videoUrl;
+    } catch (error) {
+      console.error('Erro ao processar URL do Animes Digital:', error);
+      return null;
+    }
   };
 
   // Função para processar URLs do Blogger
@@ -373,18 +419,30 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     setDetectedQualities([]);
     setIsPlayerReady(false); // Resetar estado do player
     setCurrentVideoTime(0); // Resetar progresso salvo
+    setAnimesDigitalUrl(null); // Resetar URL do animes digital
+    // Limpar HLS ao mudar de episódio
+    if (hlsRef.current) {
+      hlsRef.current.destroy();
+      hlsRef.current = null;
+    }
     // NÃO resetar isVideoVisible aqui - será controlado pelo carregamento de progresso
   }, [episodioId]);
 
-  // Carregar progresso salvo do episódio
+  // Carregar progresso salvo do episódio (apenas para usuários autenticados)
   useEffect(() => {
+    if (!isAuthenticated) return;
+
     const carregarProgressoSalvo = async () => {
-      const progressoData = await animeService.obterProgressoEpisodio(episodioId);
-      
-      if (progressoData.progresso !== null && progressoData.progresso > 0) {
-        irParaProgresso(progressoData.progresso);                                                                                                                                                                                                                                                                                                                           
-      }else{
-        irParaProgresso(0.01);
+      try {
+        const progressoData = await animeService.obterProgressoEpisodio(episodioId);
+        
+        if (progressoData.progresso !== null && progressoData.progresso > 0) {
+          irParaProgresso(progressoData.progresso);                                                                                                                                                                                                                                                                                                                           
+        } else {
+          irParaProgresso(0.01);
+        }
+      } catch (error) {
+        console.error('Erro ao carregar progresso salvo:', error);
       }
     };
 
@@ -559,6 +617,106 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     }
   }, [currentLink?.url, isAuthenticated]);
 
+  // Processar URL do Animes Digital quando o link atual mudar
+  useEffect(() => {
+    if (isAuthenticated && currentLink?.url && isAnimesDigitalProvider(currentLink.provedor)) {
+      const processedUrl = processAnimesDigitalUrl(currentLink.url);
+      setAnimesDigitalUrl(processedUrl);
+    } else {
+      setAnimesDigitalUrl(null);
+    }
+  }, [currentLink?.url, currentLink?.provedor, isAuthenticated]);
+
+  // Inicializar HLS para Animes Digital
+  useEffect(() => {
+    const video = videoRef.current;
+    
+    // Só processar se for animes digital e tiver URL processada
+    if (!isAnimesDigitalPlayer || !animesDigitalUrl || !video || !isAuthenticated) {
+      // Limpar HLS se não for mais animes digital
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+      return;
+    }
+
+    // Verificar se o navegador suporta HLS nativamente
+    if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Navegadores que suportam HLS nativamente (Safari)
+      video.src = animesDigitalUrl;
+      console.log('Usando HLS nativo do navegador');
+      
+      // Aguardar o vídeo carregar para torná-lo visível
+      const handleCanPlay = () => {
+        console.log('HLS nativo carregado');
+        setIsVideoVisible(true);
+        video.removeEventListener('canplay', handleCanPlay);
+      };
+      
+      video.addEventListener('canplay', handleCanPlay);
+      
+      // Cleanup para HLS nativo
+      return () => {
+        video.removeEventListener('canplay', handleCanPlay);
+      };
+    } else if (Hls.isSupported()) {
+      // Usar hls.js para navegadores que não suportam HLS nativamente
+      console.log('Inicializando HLS com hls.js');
+      
+      // Limpar instância anterior se existir
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+      }
+
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        backBufferLength: 90,
+      });
+
+      hls.loadSource(animesDigitalUrl);
+      hls.attachMedia(video);
+
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        console.log('Manifesto HLS carregado com sucesso');
+        setIsVideoVisible(true);
+      });
+
+      hls.on(Hls.Events.ERROR, (event, data) => {
+        console.error('Erro no HLS:', data);
+        if (data.fatal) {
+          switch (data.type) {
+            case Hls.ErrorTypes.NETWORK_ERROR:
+              console.log('Erro de rede, tentando recuperar...');
+              hls.startLoad();
+              break;
+            case Hls.ErrorTypes.MEDIA_ERROR:
+              console.log('Erro de mídia, tentando recuperar...');
+              hls.recoverMediaError();
+              break;
+            default:
+              console.log('Erro fatal, destruindo HLS...');
+              hls.destroy();
+              break;
+          }
+        }
+      });
+
+      hlsRef.current = hls;
+    } else {
+      console.error('HLS não é suportado neste navegador');
+    }
+
+    // Cleanup
+    return () => {
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+    };
+  }, [animesDigitalUrl, isAnimesDigitalPlayer, isAuthenticated]);
+
   // Função para trocar qualidade do vídeo
   const changeQuality = (qualityIndex: number) => {
     // Salvar progresso atual antes de trocar qualidade
@@ -678,23 +836,26 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
   const handlePlay = () => {
     console.log('Vídeo reproduzindo - verificando se deve iniciar timer');
     const isCurrentLinkBlogger = currentLink?.url ? isBloggerUrl(currentLink.url) : false;
-    const shouldUseTimer = isBloggerPlayer || isCurrentLinkBlogger;
+    const isCurrentLinkAnimesDigital = isAnimesDigitalProvider(currentLink?.provedor);
+    const shouldUseTimer = isBloggerPlayer || isAnimesDigitalPlayer || isCurrentLinkBlogger || isCurrentLinkAnimesDigital;
     
     console.log('Estado atual:', { 
       hasMarked, 
       isBloggerPlayer, 
+      isAnimesDigitalPlayer,
       isCurrentLinkBlogger,
+      isCurrentLinkAnimesDigital,
       shouldUseTimer,
       isAuthenticated,
       bloggerStreamsLength: bloggerStreams.length,
       timerJaRodando: !!progressIntervalRef.current
     });
     
-    if (shouldUseTimer && !progressIntervalRef.current) {
-      console.log('Episódio marcado como visto e é blogger - iniciando timer de progresso');
+    if (shouldUseTimer && !progressIntervalRef.current && isAuthenticated) {
+      console.log('Episódio marcado como visto e é blogger/animes digital - iniciando timer de progresso');
       startProgressTimer();
     } else if (hasMarked && !shouldUseTimer) {
-      console.log('Episódio marcado mas não é blogger - timer não necessário');
+      console.log('Episódio marcado mas não é blogger/animes digital - timer não necessário');
     } else if (progressIntervalRef.current) {
       console.log('Timer já está rodando - não iniciando novamente');
     } else {
@@ -711,10 +872,10 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     console.log('Vídeo terminou - parando timer e atualizando progresso para 100%');
     stopProgressTimer();
   };
-  // Gerenciar timer de progresso para vídeos blogger
+  // Gerenciar timer de progresso para vídeos blogger e animes digital
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !isBloggerPlayer || !isAuthenticated) return;
+    if (!video || (!isBloggerPlayer && !isAnimesDigitalPlayer) || !isAuthenticated) return;
 
     // Adicionar event listeners apenas quando o vídeo estiver pronto
     const handleLoadedMetadata = () => {
@@ -741,12 +902,17 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
       videoRef.current?.removeEventListener('ended', handleEnded);
       stopProgressTimer();
     };
-  }, [isBloggerPlayer, isAuthenticated, bloggerStreams, selectedLinkIndex,activeTab,selectedQuality]);
+  }, [isBloggerPlayer, isAnimesDigitalPlayer, isAuthenticated, bloggerStreams, selectedLinkIndex, activeTab, selectedQuality]);
 
   // Limpeza geral quando o componente for desmontado
   useEffect(() => {
     return () => {
       stopProgressTimer();
+      // Limpar HLS
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
     };
   }, []);
 
@@ -771,17 +937,20 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     }
   }
 
-  // Função para iniciar o timer de progresso (apenas para vídeos blogger)
+  // Função para iniciar o timer de progresso (apenas para vídeos blogger e animes digital)
   const startProgressTimer = () => {
-    // Usar verificação mais robusta baseada na URL
+    // Usar verificação mais robusta baseada na URL e provedor
     const isCurrentLinkBlogger = currentLink?.url ? isBloggerUrl(currentLink.url) : false;
-    const shouldStartTimer = isBloggerPlayer || isCurrentLinkBlogger;
+    const isCurrentLinkAnimesDigital = isAnimesDigitalProvider(currentLink?.provedor);
+    const shouldStartTimer = isBloggerPlayer || isAnimesDigitalPlayer || isCurrentLinkBlogger || isCurrentLinkAnimesDigital;
     
     if (!videoRef.current || !shouldStartTimer || !isAuthenticated) {
       console.log('Não iniciando timer:', { 
         hasVideo: !!videoRef.current, 
         isBlogger: isBloggerPlayer,
+        isAnimesDigital: isAnimesDigitalPlayer,
         isCurrentLinkBlogger,
+        isCurrentLinkAnimesDigital,
         shouldStartTimer,
         isAuth: isAuthenticated 
       });
@@ -805,7 +974,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
       }
     }, 10000); // 10 segundos para teste (mudar para 30000 em produção)
     
-    console.log('Timer de progresso iniciado para episódio blogger');
+    console.log('Timer de progresso iniciado para episódio blogger/animes digital');
   };
 
   // Função para parar o timer de progresso
@@ -1039,7 +1208,13 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
               controls
               className={`w-full h-full transition-opacity duration-300 ${isVideoVisible ? 'opacity-100' : 'opacity-0'}`}
               poster={poster}
-              src={isBloggerPlayer ? bloggerStreams[selectedQuality] : currentLink.url}
+              src={
+                isBloggerPlayer 
+                  ? bloggerStreams[selectedQuality] 
+                  : isAnimesDigitalPlayer
+                  ? undefined // HLS será gerenciado pelo hls.js, não usar src diretamente
+                  : currentLink.url
+              }
               onPlay={handlePlay}
             />
             
