@@ -211,9 +211,14 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
 
   const linksLegendado = getLinksForType('legendado');
   const linksDublado = getLinksForType('dublado');
-  const currentLinks = activeTab === 'dublado' ? linksDublado : linksLegendado;
+  let currentLinks = activeTab === 'dublado' ? linksDublado : linksLegendado;
+  // se a tab ativa nao tiver links, trocar para a outra tab
+  if(currentLinks.length === 0) {
+    setActiveTab(activeTab === 'dublado' ? 'legendado' : 'dublado');
+    currentLinks = getLinksForType(activeTab);
+  }
   const currentLink = currentLinks[selectedLinkIndex];
-
+  
   // Verifica se há vídeo dublado disponível
   const hasDubbedVideo = linksDublado.length > 0;
 
