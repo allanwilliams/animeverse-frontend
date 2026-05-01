@@ -151,6 +151,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const progressIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const minimalProgressSavedRef = useRef(false);
   const [hasMarked, setHasMarked] = useState(false);
   const [poster, setPoster] = useState<string | undefined>(undefined);
   const [activeTab, setActiveTab] = useState<VideoType>('legendado');
@@ -401,12 +402,35 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
         })));
       } else {
         console.warn('VIDEO_CONFIG não encontrado ou sem streams');
+        await saveMinimalProgressFallback('video_config_ausente');
       }
     } catch (error) {
       console.error('Erro ao processar URL do Blogger:', error);
       setBloggerStreams([]);
+      await saveMinimalProgressFallback('falha_processamento_blogger');
     } finally {
       setIsLoadingBlogger(false);
+    }
+  };
+
+  const saveMinimalProgressFallback = async (motivo: string) => {
+    if (!isAuthenticated || !episodio || minimalProgressSavedRef.current) return;
+
+    try {
+      // Fallback para registrar que o episódio foi selecionado/reproduzido,
+      // mesmo quando não conseguimos controlar timer (ex.: VIDEO_CONFIG indisponível).
+      const currentTime = Number(videoRef.current?.currentTime?.toFixed(2)) || 0.01;
+      const progressoPorcentagem = Math.max(
+        1,
+        Math.round((currentTime / (videoRef.current?.duration || 1)) * 100)
+      );
+
+      await animeService.atualizarProgressoEpisodio(episodioId, currentTime, progressoPorcentagem);
+      minimalProgressSavedRef.current = true;
+      setHasMarked(true);
+      console.log(`✅ Fallback de progresso salvo (${motivo}):`, { currentTime, progressoPorcentagem });
+    } catch (error) {
+      console.error('❌ Erro ao salvar fallback de progresso:', error);
     }
   };
 
@@ -421,6 +445,7 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
     setActiveTab('legendado');
     setSelectedLinkIndex(0);
     setHasMarked(false);
+    minimalProgressSavedRef.current = false;
     setDetectedQualities([]);
     setIsPlayerReady(false); // Resetar estado do player
     setCurrentVideoTime(0); // Resetar progresso salvo
@@ -614,6 +639,9 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
   // Processar URL do Blogger quando o link atual mudar
   useEffect(() => {
     if (isAuthenticated && currentLink?.url && isBloggerUrl(currentLink.url)) {
+      // Fallback imediato: garante progresso mínimo ao abrir episódio Blogger,
+      // mesmo que a extração do VIDEO_CONFIG demore/falhe.
+      saveMinimalProgressFallback('entrada_link_blogger');
       processBloggerUrl(currentLink.url);
     } else {
       setBloggerStreams([]);
@@ -863,6 +891,9 @@ export function EpisodePlayer({ episodioId, episodio }: EpisodePlayerProps) {
       console.log('Episódio marcado mas não é blogger/animes digital - timer não necessário');
     } else if (progressIntervalRef.current) {
       console.log('Timer já está rodando - não iniciando novamente');
+    } else if (shouldUseTimer && !videoRef.current && isAuthenticated) {
+      // Ex.: Blogger sem VIDEO_CONFIG -> player cai para iframe e não há timer.
+      saveMinimalProgressFallback('sem_video_ref_para_timer');
     } else {
       console.log('Episódio ainda não foi marcado como visto');
     }

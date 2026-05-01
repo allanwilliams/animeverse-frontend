@@ -29,10 +29,24 @@ export default async function EpisodioPage({
     notFound();
   }
 
-  // Ordena por número e encontra anterior/próximo dentro do mesmo anime
+  // Ordena por temporada -> número e encontra anterior/próximo dentro do mesmo anime
   const episodiosDoAnime = episodios
     .filter((e) => e.anime === animeId)
-    .sort((a, b) => a.numero - b.numero);
+    .sort((a, b) => {
+      const temporadaA = a.temporada_numero ?? 1;
+      const temporadaB = b.temporada_numero ?? 1;
+
+      if (temporadaA !== temporadaB) {
+        return temporadaA - temporadaB;
+      }
+
+      if (a.numero !== b.numero) {
+        return a.numero - b.numero;
+      }
+
+      // desempate estável para evitar ordem inconsistente
+      return a.id - b.id;
+    });
 
   const indexAtual = episodiosDoAnime.findIndex((e) => e.id === episodio.id);
   const episodioAnterior = indexAtual > 0 ? episodiosDoAnime[indexAtual - 1] : null;
