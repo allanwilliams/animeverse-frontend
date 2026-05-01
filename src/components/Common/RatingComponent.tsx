@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/hooks/useAuth';
 
 interface RatingComponentProps {
@@ -24,10 +24,20 @@ export function RatingComponent({
   const [hoveredRating, setHoveredRating] = useState<number | null>(null);
   const [currentRating, setCurrentRating] = useState<number | null>(initialRating);
 
+  useEffect(() => {
+    setCurrentRating(initialRating ?? null);
+  }, [initialRating]);
+
   const sizeClasses = {
-    sm: 'text-sm',
+    sm: 'text-xs',
     md: 'text-base',
     lg: 'text-xl',
+  };
+
+  const starsGapClasses = {
+    sm: 'gap-0.5',
+    md: 'gap-1',
+    lg: 'gap-1',
   };
 
   const handleClick = (rating: number) => {
@@ -57,8 +67,8 @@ export function RatingComponent({
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <div className="flex items-center gap-1">
+    <div className="flex flex-wrap items-center gap-2">
+      <div className={`flex items-center ${starsGapClasses[size]}`}>
         {Array.from({ length: maxRating }, (_, i) => i + 1).map((rating) => (
           <button
             key={rating}
@@ -69,22 +79,22 @@ export function RatingComponent({
             onMouseLeave={handleMouseLeave}
             className={`
               ${sizeClasses[size]}
-              ${readonly || !isAuthenticated ? 'cursor-default' : 'cursor-pointer hover:scale-110'}
-              transition-transform duration-150
+              ${readonly || !isAuthenticated ? 'cursor-default' : 'cursor-pointer'}
+              transition-colors duration-150 leading-none shrink-0
             `}
             aria-label={`Avaliar ${rating} de ${maxRating}`}
           >
-            {rating <= displayRating ? (
-              <span className="text-yellow-400">⭐</span>
-            ) : (
-              <span className="text-gray-500">☆</span>
-            )}
+            <span
+              className="transition-all duration-150"
+              style={rating <= displayRating ? undefined : { filter: 'invert(0.7)' }}
+            >
+              ⭐
+            </span>
           </button>
         ))}
       </div>
       {showLabel && currentRating !== null && (
         <span className="text-gray-300 text-sm font-medium">
-          {currentRating}/{maxRating}
         </span>
       )}
     </div>

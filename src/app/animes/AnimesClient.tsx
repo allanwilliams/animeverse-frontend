@@ -30,6 +30,7 @@ export function AnimesClient({
   initialStatusesFilter = [],
   initialUltimoEpisodioMap = {},
 }: AnimesClientProps) {
+  const ITEMS_PER_PAGE = 24;
   const searchParams = useSearchParams();
   const router = useRouter();
   const [data, setData] = useState<AnimeList | null>(initialData);
@@ -84,6 +85,7 @@ export function AnimesClient({
       setLoading(true);
       const result = await animeService.getAnimes({
         page,
+        page_size: ITEMS_PER_PAGE,
         search: appliedSearch || undefined,
         genero: appliedGeneros,
         status: appliedStatuses,
@@ -155,7 +157,7 @@ export function AnimesClient({
     JSON.stringify(tempGeneros.sort()) !== JSON.stringify(appliedGeneros.sort()) ||
     JSON.stringify(tempStatuses.sort()) !== JSON.stringify(appliedStatuses.sort());
 
-  const totalPages = data ? Math.ceil(data.count / 20) : 1;
+  const totalPages = data ? Math.ceil(data.count / ITEMS_PER_PAGE) : 1;
 
   return (
     <>

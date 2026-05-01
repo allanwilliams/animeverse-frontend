@@ -4,7 +4,6 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { GenreBadge } from './GenreBadge';
 import type { Anime } from '@/types/anime';
-import { STATUS_LABELS } from '@/utils/constants';
 import { getImageUrl } from '@/utils/helpers';
 
 interface AnimeCardProps {
@@ -17,6 +16,11 @@ export function AnimeCard({ anime, ultimoEpisodioId }: AnimeCardProps) {
   const href = ultimoEpisodioId && ultimoEpisodioId > 0
     ? `/animes/${anime.id}/episodio/${ultimoEpisodioId}`
     : `/animes/${anime.id}`;
+  const averageRating = Number(anime.rating_medio ?? 0);
+  const displayAverageRating = Number.isFinite(averageRating) && averageRating > 0
+    ? averageRating.toFixed(1)
+    : '0';
+  const totalVisualizacoes = Number(anime.total_visualizacoes ?? 0);
 
   return (
     <Link href={href} className="block h-full">
@@ -42,27 +46,23 @@ export function AnimeCard({ anime, ultimoEpisodioId }: AnimeCardProps) {
             <div className="flex items-center gap-1">
               <span className="text-yellow-400">⭐</span>
               <span className="text-white font-bold text-sm">
-                {anime.rating_medio > 0 ? anime.rating_medio.toFixed(1) : 'N/A'}
+                {displayAverageRating}
               </span>
             </div>
           </div>
         </div>
 
-        <div className="p-3 flex flex-col flex-grow min-h-[100px]">
-          <h3 className="font-bold text-white text-base truncate mb-1.5">
+        <div className="p-3 flex flex-col gap-1.5">
+          <h3 className="font-bold text-white text-base truncate">
             {anime.titulo}
           </h3>
-          
-          <div className="flex items-center gap-2 mb-2">
-            <span className="text-xs px-1.5 py-0.5 rounded-full bg-gray-700 text-gray-300 whitespace-nowrap">
-              {STATUS_LABELS[anime.status]}
-            </span>
-            <span className="text-xs text-gray-400 whitespace-nowrap">
-              {(anime.total_episodios ?? anime.episodios_totais) || 0} eps
-            </span>
-          </div>
 
-          <div className="flex flex-wrap gap-1 min-h-[20px] max-h-[40px] overflow-hidden items-start">
+          <div className="flex items-center gap-1 text-xs text-gray-400">
+            <span>👁️</span>
+            <span>{totalVisualizacoes.toLocaleString('pt-BR')}</span>
+          </div>
+          
+          <div className="flex flex-wrap gap-1 overflow-hidden items-start">
             {anime.generos.slice(0, 2).map((genero) => (
               <GenreBadge key={genero.id} genero={genero} />
             ))}

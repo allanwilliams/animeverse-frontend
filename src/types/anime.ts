@@ -65,7 +65,7 @@ export interface Episodio {
   links: LinksEpisodio;
   duracao: number;
   data_lancamento: string;
-  visualizacoes: number;
+  total_visualizacoes: number;
   criado_em: string;
 }
 
@@ -84,6 +84,7 @@ export interface Anime {
   estudio: string;
   rating_medio: number;
   total_avaliacoes: number;
+  total_visualizacoes?: number;
   generos: Genero[];
   temporadas?: Temporada[];
   episodios?: Episodio[];
@@ -96,6 +97,7 @@ export interface Anime {
 
 export interface AnimeFilters {
   page?: number;
+  page_size?: number;
   search?: string;
   genero?: string | string[];
   genero_id?: number | number[];

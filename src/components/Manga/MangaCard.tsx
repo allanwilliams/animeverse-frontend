@@ -12,6 +12,11 @@ interface MangaCardProps {
 }
 
 export function MangaCard({ manga }: MangaCardProps) {
+  const averageRating = Number(manga.rating_medio ?? 0);
+  const displayAverageRating = Number.isFinite(averageRating) && averageRating > 0
+    ? averageRating.toFixed(1)
+    : '0';
+
   return (
     <Link href={`/mangas/${manga.id}`} className="block h-full">
       <div className="group relative overflow-hidden rounded-lg bg-gray-800 shadow-lg transition-all duration-300 hover:shadow-2xl hover:scale-105 flex flex-col h-full">
@@ -36,7 +41,7 @@ export function MangaCard({ manga }: MangaCardProps) {
             <div className="flex items-center gap-1">
               <span className="text-yellow-400">⭐</span>
               <span className="text-white font-bold text-sm">
-                {manga.rating_medio > 0 ? manga.rating_medio.toFixed(1) : 'N/A'}
+                {displayAverageRating}
               </span>
             </div>
           </div>

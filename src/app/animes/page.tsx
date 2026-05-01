@@ -36,6 +36,7 @@ export default async function AnimesPage({ searchParams }: AnimesPageProps) {
     getGenerosServer(),
     getAnimesServer({
       page,
+      page_size: 24,
       search: search || undefined,
       genero: generosFilter,
       status: statusesFilter,

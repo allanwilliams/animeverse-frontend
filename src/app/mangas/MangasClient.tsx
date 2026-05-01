@@ -28,6 +28,7 @@ export function MangasClient({
   initialGenerosFilter = [],
   initialStatusesFilter = [],
 }: MangasClientProps) {
+  const ITEMS_PER_PAGE = 24;
   const searchParams = useSearchParams();
   const router = useRouter();
   const [data, setData] = useState<MangaList | null>(initialData);
@@ -78,6 +79,7 @@ export function MangasClient({
       setLoading(true);
       const result = await mangaService.getMangas({
         page,
+        page_size: ITEMS_PER_PAGE,
         search: appliedSearch || undefined,
         genero: appliedGeneros.length > 0 ? appliedGeneros[0] : undefined,
         status: appliedStatuses.length > 0 ? appliedStatuses[0] : undefined,
@@ -148,7 +150,7 @@ export function MangasClient({
     JSON.stringify(tempGeneros.sort()) !== JSON.stringify(appliedGeneros.sort()) ||
     JSON.stringify(tempStatuses.sort()) !== JSON.stringify(appliedStatuses.sort());
 
-  const totalPages = data ? Math.ceil(data.count / 20) : 1;
+  const totalPages = data ? Math.ceil(data.count / ITEMS_PER_PAGE) : 1;
 
   return (
     <>

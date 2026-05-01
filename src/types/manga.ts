@@ -62,6 +62,7 @@ export interface MangaList {
 
 export interface MangaFilters {
   page?: number;
+  page_size?: number;
   search?: string;
   genero?: string;
   genero_id?: number;

@@ -1,7 +1,6 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { animeService } from '@/services/animeService';
-import { getImageUrl } from '@/utils/helpers';
 import { EpisodePlayer } from '@/components/Anime/EpisodePlayer';
 
 export default async function EpisodioPage({
@@ -58,10 +57,15 @@ export default async function EpisodioPage({
   return (
     <div className="min-h-screen bg-gray-900">
       <section className="container mx-auto px-4 py-8">
-        <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">
-          {episodio.anime_titulo} - Episódio {episodio.numero}
-        </h1>
-        <p className="text-gray-400 mb-6">{episodio.titulo}</p>
+        <div className="flex flex-wrap items-center gap-3 mb-2">
+          <h1 className="text-2xl md:text-3xl font-bold text-white">
+            {episodio.anime_titulo} - Episódio {episodio.numero}
+          </h1>
+          <span className="inline-flex items-center gap-1 text-sm text-gray-300 bg-gray-800 px-3 py-1 rounded-full">
+            <span>👁️</span>
+            <span>{Number(episodio.total_visualizacoes ?? 0).toLocaleString('pt-BR')}</span>
+          </span>
+        </div>
 
         {/* Player */}
         <EpisodePlayer episodioId={episodio.id} episodio={episodio} />
@@ -94,22 +98,12 @@ export default async function EpisodioPage({
           </Link>
         </div>
 
-        {/* Meta */}
-        <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="md:col-span-2">
-            {episodio.sinopse && (
-              <div className="bg-gray-800 rounded-lg p-6">
-                <h2 className="text-white font-semibold mb-2">Sinopse</h2>
-                <p className="text-gray-300 leading-relaxed">{episodio.sinopse}</p>
-              </div>
-            )}
+        {episodio.sinopse && (
+          <div className="mt-6 bg-gray-800 rounded-lg p-6">
+            <h2 className="text-white font-semibold mb-2">Sinopse</h2>
+            <p className="text-gray-300 leading-relaxed">{episodio.sinopse}</p>
           </div>
-          <div className="bg-gray-800 rounded-lg p-6 space-y-3">
-            <div className="text-gray-300"><span className="text-gray-400">Duração:</span> {episodio.duracao} min</div>
-            <div className="text-gray-300"><span className="text-gray-400">Lançamento:</span> {new Date(episodio.data_lancamento).toLocaleDateString()}</div>
-            <div className="text-gray-300"><span className="text-gray-400">Visualizações:</span> {episodio.visualizacoes}</div>
-          </div>
-        </div>
+        )}
       </section>
     </div>
   );

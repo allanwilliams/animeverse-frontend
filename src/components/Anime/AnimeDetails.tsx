@@ -4,28 +4,72 @@ import Image from 'next/image';
 import { useState, useEffect } from 'react';
 import { GenreBadge } from './GenreBadge';
 import { Button } from '../Common/Button';
+import { RatingComponent } from '../Common/RatingComponent';
 import { useAuth } from '@/hooks/useAuth';
 import { animeService } from '@/services/animeService';
-import { RatingComponent } from '../Common/RatingComponent';
 import type { Anime } from '@/types/anime';
-import { STATUS_LABELS } from '@/utils/constants';
-import { formatDate, getImageUrl } from '@/utils/helpers';
+import { getImageUrl } from '@/utils/helpers';
 
 interface AnimeDetailsProps {
   anime: Anime;
 }
 
 export function AnimeDetails({ anime }: AnimeDetailsProps) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const [isFavorito, setIsFavorito] = useState(anime.is_favorito === true);
   const [isLoading, setIsLoading] = useState(false);
   const [userRating, setUserRating] = useState<number | null>(null);
-  const [ratingLoading, setRatingLoading] = useState(false);
+  const averageRating = Number(anime.rating_medio ?? 0);
+  const displayAverageRating = Number.isFinite(averageRating) && averageRating > 0
+    ? averageRating.toFixed(1)
+    : '0';
+  const totalVisualizacoes = Number(anime.total_visualizacoes ?? 0);
 
   // Atualizar estado quando anime.is_favorito mudar
   useEffect(() => {
     setIsFavorito(anime.is_favorito === true);
   }, [anime.is_favorito]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadCurrentUserRating = async () => {
+      if (!isAuthenticated || !user) {
+        setUserRating(null);
+        return;
+      }
+
+      try {
+        const reviews = await animeService.getReviews(anime.id);
+        const reviewDoUsuario = reviews.find((review) => {
+          // Preferir match por id quando disponível; fallback por username.
+          const sameUserId =
+            typeof (user as any).id === 'number' &&
+            review.usuario === (user as any).id;
+          const sameUsername =
+            typeof (user as any).username === 'string' &&
+            review.usuario_nome === (user as any).username;
+
+          return sameUserId || sameUsername;
+        });
+
+        if (active) {
+          setUserRating(reviewDoUsuario?.rating ?? null);
+        }
+      } catch (error) {
+        if (active) {
+          setUserRating(null);
+        }
+        console.error('Erro ao carregar avaliação atual do usuário:', error);
+      }
+    };
+
+    loadCurrentUserRating();
+
+    return () => {
+      active = false;
+    };
+  }, [anime.id, isAuthenticated, user]);
 
   const handleFavoritar = async () => {
     if (!isAuthenticated) {
@@ -52,14 +96,11 @@ export function AnimeDetails({ anime }: AnimeDetailsProps) {
     }
 
     try {
-      setRatingLoading(true);
       await animeService.avaliarAnime(anime.id, rating);
       setUserRating(rating);
     } catch (error) {
       console.error('Erro ao avaliar anime:', error);
-      alert('Erro ao avaliar anime');
-    } finally {
-      setRatingLoading(false);
+      alert('Erro ao salvar avaliação');
     }
   };
 
@@ -82,7 +123,7 @@ export function AnimeDetails({ anime }: AnimeDetailsProps) {
       <div className="relative container mx-auto px-4 pt-20">
         <div className="flex flex-col md:flex-row gap-8">
           {/* Capa */}
-          <div className="w-full md:w-64 lg:w-80 flex-shrink-0">
+          <div className="w-full md:w-52 lg:w-50 flex-shrink-0">
             <div className="aspect-[2/3] relative rounded-lg overflow-hidden shadow-2xl">
               {getImageUrl(anime.capa) ? (
                 <Image
@@ -110,10 +151,8 @@ export function AnimeDetails({ anime }: AnimeDetailsProps) {
                 >
                   {isFavorito ? '❤️ Nos Favoritos' : '🤍 Adicionar aos Favoritos'}
                 </Button>
-                
-                {/* Rating */}
+
                 <div className="mt-4 p-4 bg-gray-800 rounded-lg">
-                  <h3 className="text-white font-semibold mb-2 text-sm">Sua Avaliação</h3>
                   <RatingComponent
                     initialRating={userRating}
                     onRatingChange={handleRatingChange}
@@ -128,28 +167,20 @@ export function AnimeDetails({ anime }: AnimeDetailsProps) {
           {/* Informações */}
           <div className="flex-1">
             <h1 className="text-4xl font-bold text-white mb-2">{anime.titulo}</h1>
-            {anime.titulo_original && (
-              <p className="text-xl text-gray-400 mb-4">{anime.titulo_original}</p>
-            )}
 
-            {/* Stats */}
-            <div className="flex flex-wrap gap-4 mb-6">
-              <div className="flex items-center gap-2 bg-gray-800 px-4 py-2 rounded-lg">
+            {/* Avaliações */}
+            <div className="mb-6 space-y-3">
+              <div className="flex items-center gap-2">
                 <span className="text-yellow-400">⭐</span>
-                <span className="text-white font-bold">
-                  {anime.rating_medio > 0 ? anime.rating_medio.toFixed(1) : 'N/A'}
+                <span className="text-white font-semibold">Avaliação média:</span>
+                <span className="text-gray-300">
+                  {displayAverageRating}
                 </span>
-                <span className="text-gray-400 text-sm">
-                  ({anime.total_avaliacoes} avaliações)
+                <span className="text-gray-500">|</span>
+                <span className="text-gray-400">👁️</span>
+                <span className="text-gray-300">
+                  {totalVisualizacoes.toLocaleString('pt-BR')}
                 </span>
-              </div>
-              
-              <div className="bg-gray-800 px-4 py-2 rounded-lg">
-                <span className="text-white">{STATUS_LABELS[anime.status]}</span>
-              </div>
-              
-              <div className="bg-gray-800 px-4 py-2 rounded-lg">
-                <span className="text-white">{(anime.total_episodios ?? anime.episodios_totais) || 0} episódios</span>
               </div>
             </div>
 
@@ -171,27 +202,6 @@ export function AnimeDetails({ anime }: AnimeDetailsProps) {
               <p className="text-gray-300 leading-relaxed">{anime.sinopse}</p>
             </div>
 
-            {/* Informações Adicionais */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-800 p-6 rounded-lg">
-              <div>
-                <span className="text-gray-400">Estúdio:</span>
-                <span className="text-white ml-2">{anime.estudio || 'N/A'}</span>
-              </div>
-              <div>
-                <span className="text-gray-400">Data de Lançamento:</span>
-                <span className="text-white ml-2">{formatDate(anime.data_lancamento)}</span>
-              </div>
-              <div>
-                <span className="text-gray-400">Duração por Episódio:</span>
-                <span className="text-white ml-2">{anime.duracao_episodio} minutos</span>
-              </div>
-              <div>
-                <span className="text-gray-400">Total de Episódios:</span>
-                <span className="text-white ml-2">
-                  {anime.total_episodios || anime.episodios_totais || 0}
-                </span>
-              </div>
-            </div>
           </div>
         </div>
       </div>

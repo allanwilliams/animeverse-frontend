@@ -52,9 +52,6 @@ export function EpisodeList({ episodios }: EpisodeListProps) {
                         <>Episódio {episodio.numero}</>
                       )}
                     </span>
-                    <h4 className="text-white font-semibold text-lg mt-1 group-hover:underline">
-                      {episodio.titulo}
-                    </h4>
                   </Link>
                 </div>
                 <span className="text-gray-400 text-sm">{episodio.duracao} min</span>
@@ -67,12 +64,6 @@ export function EpisodeList({ episodios }: EpisodeListProps) {
               )}
               
               <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
-                {episodio.data_lancamento && (
-                  <span className="flex items-center gap-1">
-                    <span>📅</span>
-                    <span>{new Date(episodio.data_lancamento).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-                  </span>
-                )}
                 <span className="flex items-center gap-1">
                   <span>👁️</span>
                   <span>{episodio.visualizacoes} visualizações</span>

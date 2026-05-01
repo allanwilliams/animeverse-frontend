@@ -36,6 +36,7 @@ export default async function MangasPage({ searchParams }: MangasPageProps) {
     getGenerosServer(),
     getMangasServer({
       page,
+      page_size: 24,
       search: search || undefined,
       genero: generosFilter.length > 0 ? generosFilter[0] : undefined,
       status: statusesFilter.length > 0 ? statusesFilter[0] : undefined,

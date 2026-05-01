@@ -21,6 +21,10 @@ export function MangaDetails({ manga }: MangaDetailsProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [userRating, setUserRating] = useState<number | null>(null);
   const [ratingLoading, setRatingLoading] = useState(false);
+  const averageRating = Number(manga.rating_medio ?? 0);
+  const displayAverageRating = Number.isFinite(averageRating) && averageRating > 0
+    ? averageRating.toFixed(1)
+    : '0';
 
   // Atualizar estado quando manga.is_favorito mudar
   useEffect(() => {
@@ -137,7 +141,7 @@ export function MangaDetails({ manga }: MangaDetailsProps) {
               <div className="flex items-center gap-2 bg-gray-800 px-4 py-2 rounded-lg">
                 <span className="text-yellow-400">⭐</span>
                 <span className="text-white font-bold">
-                  {manga.rating_medio > 0 ? manga.rating_medio.toFixed(1) : 'N/A'}
+                  {displayAverageRating}
                 </span>
                 <span className="text-gray-400 text-sm">
                   ({manga.total_avaliacoes} avaliações)

@@ -4,33 +4,25 @@ import { MangaGrid } from '@/components/Manga/MangaGrid';
 import { HeroSection } from '@/components/Home/HeroSection';
 import {
   getFavoritosServer,
-  getAnimesPopularesServer,
   getAnimesRecentesServer,
-  getMangasPopularesServer,
   getMangasRecentesServer,
 } from '@/lib/api-server';
 import type { Anime } from '@/types/anime';
 import type { Manga } from '@/types/manga';
 
 export default async function Home() {
-  let popularesAnimes: Anime[] = [];
   let recentesAnimes: Anime[] = [];
-  let popularesMangas: Manga[] = [];
   let recentesMangas: Manga[] = [];
   let ultimoEpisodioMap: Record<number, number | null> = {};
 
   try {
-    const [populares, recentes, mangasPop, mangasRec, favoritosResponse] = await Promise.all([
-      getAnimesPopularesServer(),
+    const [recentes, mangasRec, favoritosResponse] = await Promise.all([
       getAnimesRecentesServer(),
-      getMangasPopularesServer(),
       getMangasRecentesServer(),
       getFavoritosServer(),
     ]);
 
-    popularesAnimes = populares;
     recentesAnimes = recentes;
-    popularesMangas = mangasPop;
     recentesMangas = mangasRec;
 
     // Criar mapeamento de favoritos para último episódio
@@ -50,31 +42,12 @@ export default async function Home() {
       {/* Hero Section */}
       <HeroSection />
 
-      {/* Animes Populares */}
-      <section className="container mx-auto px-4 py-12">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-3xl font-bold">🔥 Animes Populares</h2>
-        </div>
-        <AnimeGrid animes={popularesAnimes.slice(0, 12)} emptyMessage="Nenhum anime popular no momento" ultimoEpisodioMap={ultimoEpisodioMap} />
-      </section>
-
       {/* Animes Recentes */}
       <section className="container mx-auto px-4 py-12">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-3xl font-bold">✨ Animes Adicionados Recentemente</h2>
         </div>
         <AnimeGrid animes={recentesAnimes.slice(0, 12)} emptyMessage="Nenhum anime recente" ultimoEpisodioMap={ultimoEpisodioMap} />
-      </section>
-
-      {/* Mangas Populares */}
-      <section className="container mx-auto px-4 py-12">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-3xl font-bold">📚 Mangas Populares</h2>
-          <Link href="/mangas?ordering=-rating_medio" className="text-purple-400 hover:text-purple-300">
-            Ver todos →
-          </Link>
-        </div>
-        <MangaGrid mangas={popularesMangas.slice(0, 12)} emptyMessage="Nenhum manga popular no momento" />
       </section>
 
       {/* Mangas Recentes */}

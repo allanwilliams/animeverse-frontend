@@ -150,17 +150,9 @@ export function SeasonList({ temporadas, animeId }: SeasonListProps) {
                               <span className="text-purple-400 font-semibold text-sm group-hover:underline">
                                 Episódio {episodio.numero}
                               </span>
-                              <h4 className="text-white font-medium mt-1 group-hover:underline">
-                                {episodio.titulo}
-                              </h4>
                               {episodio.sinopse && (
                                 <p className="text-gray-400 text-sm mt-1 line-clamp-1">
                                   {episodio.sinopse}
-                                </p>
-                              )}
-                              {episodio.data_lancamento && (
-                                <p className="text-gray-500 text-xs mt-1">
-                                  📅 {new Date(episodio.data_lancamento).toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
                                 </p>
                               )}
                             </div>
