@@ -7,11 +7,33 @@ export interface Genero {
   criado_em: string;
 }
 
+/** Provedor no JSON pode vir como PK (número), objeto aninhado ou só `provedor_id`. */
+export type ProvedorRefEmLink = number | { id: number };
+
+export interface LinkPagina {
+  id: number;
+  pagina: number;
+  /** FK ProvedoresManga (PK); preferir `provedorIdDoLink()` para comparação */
+  provedor: number | ProvedorRefEmLink;
+  /** Espelho explícito do FK no modelo LinkPagina */
+  provedor_id?: number;
+  provedor_nome?: string;
+  /** Domínio base do provedor deste link (Referer na CDN); preferir ao do manga */
+  provedor_dominio?: string | null;
+  url: string;
+  ativo: boolean;
+  criado_em: string;
+  atualizado_em: string;
+}
+
 export interface Pagina {
   id: number;
   capitulo: number;
   numero: number;
   imagem: string;
+  /** Preferir `links`; mantido para compat com API (primeiro link ativo) */
+  pagina_url?: string | null;
+  links?: LinkPagina[];
   criado_em: string;
 }
 
@@ -28,6 +50,11 @@ export interface Capitulo {
   data_lancamento: string;
   visualizacoes: number;
   criado_em: string;
+  /** Presente no GET /capitulos/{id}/ (detalhe) para navegação sem listar todos os capítulos */
+  capitulo_anterior_id?: number | null;
+  capitulo_proximo_id?: number | null;
+  /** Fallback: domínio do provedor do manga (Referer no proxy se o link não tiver `provedor_dominio`) */
+  provedor_imagem_referer?: string | null;
 }
 
 export interface Manga {
@@ -45,6 +72,7 @@ export interface Manga {
   editora: string;
   rating_medio: number;
   total_avaliacoes: number;
+  total_visualizacoes?: number;
   generos: Genero[];
   capitulos?: Capitulo[];
   total_capitulos?: number;
@@ -66,7 +94,6 @@ export interface MangaFilters {
   search?: string;
   genero?: string;
   genero_id?: number;
-  status?: string;
   ano?: number;
   ano_min?: number;
   ano_max?: number;

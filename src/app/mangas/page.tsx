@@ -1,13 +1,12 @@
 import { Header } from '@/components/Layout/Header';
 import { MangasClient } from './MangasClient';
-import { getGenerosServer, getMangasServer, getFavoritosServer } from '@/lib/api-server';
+import { getGenerosMangasCadastradosServer, getMangasServer } from '@/lib/api-server';
 
 interface MangasPageProps {
   searchParams: Promise<{
     page?: string;
     search?: string;
     genero?: string | string[];
-    status?: string | string[];
   }>;
 }
 
@@ -17,29 +16,22 @@ export default async function MangasPage({ searchParams }: MangasPageProps) {
   const page = parseInt(params.page || '1', 10);
   const search = params.search || '';
   const generoParam = params.genero;
-  const statusParam = params.status;
-  
+
   // Normalizar arrays de filtros
-  const generosFilter = Array.isArray(generoParam) 
-    ? generoParam 
-    : generoParam 
-      ? [generoParam] 
-      : [];
-  const statusesFilter = Array.isArray(statusParam)
-    ? statusParam
-    : statusParam
-      ? [statusParam]
+  const generosFilter = Array.isArray(generoParam)
+    ? generoParam
+    : generoParam
+      ? [generoParam]
       : [];
 
   // Buscar gêneros e mangas em paralelo no servidor
   const [generos, mangasData] = await Promise.all([
-    getGenerosServer(),
+    getGenerosMangasCadastradosServer(),
     getMangasServer({
       page,
       page_size: 24,
       search: search || undefined,
       genero: generosFilter.length > 0 ? generosFilter[0] : undefined,
-      status: statusesFilter.length > 0 ? statusesFilter[0] : undefined,
     }),
   ]);
 
@@ -52,7 +44,6 @@ export default async function MangasPage({ searchParams }: MangasPageProps) {
         initialPage={page}
         initialSearch={search}
         initialGenerosFilter={generosFilter}
-        initialStatusesFilter={statusesFilter}
       />
     </div>
   );

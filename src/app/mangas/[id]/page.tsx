@@ -16,14 +16,23 @@ export default async function MangaDetailPage({ params }: MangaDetailPageProps) 
     notFound();
   }
 
-  const [manga, capitulos] = await Promise.all([
+  const [manga, capitulosPag] = await Promise.all([
     getMangaByIdServer(mangaId),
-    getCapitulosServer(mangaId),
+    getCapitulosServer(mangaId, 1),
   ]);
 
   if (!manga) {
     notFound();
   }
 
-  return <MangaDetailsClient manga={manga} mangaId={mangaId} capitulos={capitulos} />;
+  return (
+    <MangaDetailsClient
+      manga={manga}
+      mangaId={mangaId}
+      capitulos={capitulosPag?.results ?? []}
+      totalCapitulos={
+        capitulosPag?.count ?? capitulosPag?.results?.length ?? 0
+      }
+    />
+  );
 }

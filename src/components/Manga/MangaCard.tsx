@@ -4,7 +4,6 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { GenreBadge } from '../Anime/GenreBadge';
 import type { Manga } from '@/types/manga';
-import { MANGA_STATUS_LABELS } from '@/utils/constants';
 import { getImageUrl } from '@/utils/helpers';
 
 interface MangaCardProps {
@@ -16,6 +15,7 @@ export function MangaCard({ manga }: MangaCardProps) {
   const displayAverageRating = Number.isFinite(averageRating) && averageRating > 0
     ? averageRating.toFixed(1)
     : '0';
+  const totalVisualizacoes = Number(manga.total_visualizacoes ?? 0);
 
   return (
     <Link href={`/mangas/${manga.id}`} className="block h-full">
@@ -47,26 +47,22 @@ export function MangaCard({ manga }: MangaCardProps) {
           </div>
         </div>
 
-        <div className="p-4 flex flex-col flex-grow min-h-[120px]">
-          <h3 className="font-bold text-white text-lg truncate mb-2">
+        <div className="p-3 flex flex-col gap-1.5">
+          <h3 className="font-bold text-white text-base truncate">
             {manga.titulo}
           </h3>
-          
-          <div className="flex items-center gap-2 mb-3">
-            <span className="text-xs px-2 py-1 rounded-full bg-gray-700 text-gray-300 whitespace-nowrap">
-              {MANGA_STATUS_LABELS[manga.status]}
-            </span>
-            <span className="text-xs text-gray-400 whitespace-nowrap">
-              {manga.capitulos_totais || 0} caps
-            </span>
+
+          <div className="flex items-center gap-1 text-xs text-gray-400">
+            <span>👁️</span>
+            <span>{totalVisualizacoes.toLocaleString('pt-BR')}</span>
           </div>
 
-          <div className="flex flex-wrap gap-1 min-h-[24px] max-h-[48px] overflow-hidden items-start">
-            {manga.generos.slice(0, 3).map((genero) => (
+          <div className="flex flex-wrap gap-1 overflow-hidden items-start">
+            {manga.generos.slice(0, 2).map((genero) => (
               <GenreBadge key={genero.id} genero={genero} />
             ))}
-            {manga.generos.length > 3 && (
-              <span className="text-xs text-gray-400 leading-6">+{manga.generos.length - 3}</span>
+            {manga.generos.length > 2 && (
+              <span className="text-xs text-gray-400 leading-5">+{manga.generos.length - 2}</span>
             )}
           </div>
         </div>

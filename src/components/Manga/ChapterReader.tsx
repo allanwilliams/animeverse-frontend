@@ -9,9 +9,15 @@ import type { Capitulo } from '@/types/manga';
 interface ChapterReaderProps {
   capitulo: Capitulo;
   capituloId: number;
+  /** Se definido, cada página usa o link deste provedor quando existir */
+  provedorSelecionadoId?: number | null;
 }
 
-export function ChapterReader({ capitulo, capituloId }: ChapterReaderProps) {
+export function ChapterReader({
+  capitulo,
+  capituloId,
+  provedorSelecionadoId = null,
+}: ChapterReaderProps) {
   const { isAuthenticated } = useAuth();
   const [hasMarked, setHasMarked] = useState(false);
 
@@ -31,6 +37,6 @@ export function ChapterReader({ capitulo, capituloId }: ChapterReaderProps) {
     }
   }, [isAuthenticated, hasMarked, capituloId, capitulo.paginas_list]);
 
-  return <MangaReader capitulo={capitulo} />;
+  return <MangaReader capitulo={capitulo} provedorSelecionadoId={provedorSelecionadoId} />;
 }
 

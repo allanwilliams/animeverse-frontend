@@ -7,9 +7,9 @@ import { Pagination } from '@/components/Common/Pagination';
 import { Loading } from '@/components/Common/Loading';
 import { SearchInput } from '@/components/Filters/SearchInput';
 import { GenreAutocomplete } from '@/components/Filters/GenreAutocomplete';
-import { StatusAutocomplete } from '@/components/Filters/StatusAutocomplete';
 import { mangaService } from '@/services/mangaService';
-import type { MangaList, Genero } from '@/types/anime';
+import type { MangaList } from '@/types/manga';
+import type { Genero } from '@/types/anime';
 
 interface MangasClientProps {
   initialData: MangaList | null;
@@ -17,7 +17,6 @@ interface MangasClientProps {
   initialPage?: number;
   initialSearch?: string;
   initialGenerosFilter?: string[];
-  initialStatusesFilter?: string[];
 }
 
 export function MangasClient({
@@ -26,7 +25,6 @@ export function MangasClient({
   initialPage = 1,
   initialSearch = '',
   initialGenerosFilter = [],
-  initialStatusesFilter = [],
 }: MangasClientProps) {
   const ITEMS_PER_PAGE = 24;
   const searchParams = useSearchParams();
@@ -35,40 +33,34 @@ export function MangasClient({
   const [loading, setLoading] = useState(false);
   const [page, setPage] = useState(initialPage);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  
+
   // Estados temporários (não aplicados ainda)
   const [tempSearch, setTempSearch] = useState(initialSearch);
   const [tempGeneros, setTempGeneros] = useState<string[]>(initialGenerosFilter);
-  const [tempStatuses, setTempStatuses] = useState<string[]>(initialStatusesFilter);
-  
+
   // Estados aplicados (filtros ativos)
   const [appliedSearch, setAppliedSearch] = useState(initialSearch);
   const [appliedGeneros, setAppliedGeneros] = useState<string[]>(initialGenerosFilter);
-  const [appliedStatuses, setAppliedStatuses] = useState<string[]>(initialStatusesFilter);
 
   useEffect(() => {
     const searchFromUrl = searchParams.get('search') || '';
     const generoFromUrl = searchParams.get('genero') || '';
-    const statusFromUrl = searchParams.get('status') || '';
     const pageFromUrl = searchParams.get('page') || '1';
-    
+
     setTempSearch(searchFromUrl);
     setAppliedSearch(searchFromUrl);
     setTempGeneros(generoFromUrl ? [generoFromUrl] : []);
     setAppliedGeneros(generoFromUrl ? [generoFromUrl] : []);
-    setTempStatuses(statusFromUrl ? [statusFromUrl] : []);
-    setAppliedStatuses(statusFromUrl ? [statusFromUrl] : []);
     setPage(parseInt(pageFromUrl, 10));
   }, [searchParams]);
 
-  const updateURL = useCallback((search: string, generos: string[], statuses: string[], page: number) => {
+  const updateURL = useCallback((search: string, generos: string[], pageNum: number) => {
     const params = new URLSearchParams();
-    
+
     if (search) params.set('search', search);
     if (generos.length > 0) params.set('genero', generos[0]); // Mangás suportam apenas um gênero
-    if (statuses.length > 0) params.set('status', statuses[0]); // Mangás suportam apenas um status
-    if (page > 1) params.set('page', page.toString());
-    
+    if (pageNum > 1) params.set('page', pageNum.toString());
+
     const queryString = params.toString();
     const newURL = queryString ? `/mangas?${queryString}` : '/mangas';
     router.push(newURL);
@@ -82,7 +74,6 @@ export function MangasClient({
         page_size: ITEMS_PER_PAGE,
         search: appliedSearch || undefined,
         genero: appliedGeneros.length > 0 ? appliedGeneros[0] : undefined,
-        status: appliedStatuses.length > 0 ? appliedStatuses[0] : undefined,
       });
       setData(result);
     } catch (error) {
@@ -90,21 +81,20 @@ export function MangasClient({
     } finally {
       setLoading(false);
     }
-  }, [page, appliedSearch, appliedGeneros, appliedStatuses]);
+  }, [page, appliedSearch, appliedGeneros]);
 
   useEffect(() => {
     // Só carrega se houver mudanças nos filtros ou página (não no mount inicial)
-    const hasChanged = 
-      page !== initialPage || 
-      appliedSearch !== initialSearch || 
-      JSON.stringify([...appliedGeneros].sort()) !== JSON.stringify([...initialGenerosFilter].sort()) ||
-      JSON.stringify([...appliedStatuses].sort()) !== JSON.stringify([...initialStatusesFilter].sort());
-    
+    const hasChanged =
+      page !== initialPage ||
+      appliedSearch !== initialSearch ||
+      JSON.stringify([...appliedGeneros].sort()) !== JSON.stringify([...initialGenerosFilter].sort());
+
     if (hasChanged) {
       loadMangas();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, appliedSearch, appliedGeneros, appliedStatuses]);
+  }, [page, appliedSearch, appliedGeneros]);
 
   const handleSearch = (query: string) => {
     setTempSearch(query);
@@ -114,41 +104,33 @@ export function MangasClient({
     setTempGeneros(newGeneros);
   };
 
-  const handleStatusChange = (newStatuses: string[]) => {
-    setTempStatuses(newStatuses);
-  };
-
   const handleFilter = () => {
     setAppliedSearch(tempSearch);
     setAppliedGeneros(tempGeneros);
-    setAppliedStatuses(tempStatuses);
     setPage(1);
-    updateURL(tempSearch, tempGeneros, tempStatuses, 1);
+    updateURL(tempSearch, tempGeneros, 1);
   };
 
   const handleClearFilters = () => {
     setTempSearch('');
     setTempGeneros([]);
-    setTempStatuses([]);
     setAppliedSearch('');
     setAppliedGeneros([]);
-    setAppliedStatuses([]);
     setPage(1);
-    updateURL('', [], [], 1);
+    updateURL('', [], 1);
   };
 
   const handlePageChange = (newPage: number) => {
     setPage(newPage);
-    updateURL(appliedSearch, appliedGeneros, appliedStatuses, newPage);
+    updateURL(appliedSearch, appliedGeneros, newPage);
     // Scroll to top when page changes
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const hasActiveFilters = appliedSearch || appliedGeneros.length > 0 || appliedStatuses.length > 0;
-  const hasChanges = 
+  const hasActiveFilters = appliedSearch || appliedGeneros.length > 0;
+  const hasChanges =
     tempSearch !== appliedSearch ||
-    JSON.stringify(tempGeneros.sort()) !== JSON.stringify(appliedGeneros.sort()) ||
-    JSON.stringify(tempStatuses.sort()) !== JSON.stringify(appliedStatuses.sort());
+    JSON.stringify(tempGeneros.sort()) !== JSON.stringify(appliedGeneros.sort());
 
   const totalPages = data ? Math.ceil(data.count / ITEMS_PER_PAGE) : 1;
 
@@ -189,29 +171,18 @@ export function MangasClient({
                   value={tempSearch}
                   onChange={handleSearch}
                   onEnter={handleFilter}
-                  placeholder="Buscar por título, editora..."
+                  placeholder="Buscar por título..."
                 />
               </div>
               <div className="flex-1">
-                <GenreAutocomplete 
-                  selectedGenres={tempGeneros} 
+                <GenreAutocomplete
+                  selectedGenres={tempGeneros}
                   onGenreChange={handleGenreChange}
                   generos={initialGeneros}
                 />
               </div>
-              <div className="flex-1">
-                <StatusAutocomplete 
-                  selectedStatuses={tempStatuses} 
-                  onStatusChange={handleStatusChange}
-                  statusOptions={[
-                    { value: 'em_lancamento', label: 'Em Lançamento' },
-                    { value: 'completo', label: 'Completo' },
-                    { value: 'cancelado', label: 'Cancelado' },
-                  ]}
-                />
-              </div>
             </div>
-            
+
             {/* Filter buttons */}
             <div className="flex gap-2 mt-4">
               <button
@@ -243,7 +214,7 @@ export function MangasClient({
             <div className="mb-4 text-gray-400">
               {data && <p>{data.count} manga(s) encontrado(s)</p>}
             </div>
-            
+
             <MangaGrid mangas={data?.results || []} />
 
             {data && totalPages > 1 && (
@@ -259,4 +230,3 @@ export function MangasClient({
     </>
   );
 }
-

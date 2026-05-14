@@ -1,22 +1,22 @@
 'use client';
 
 import Image from 'next/image';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { GenreBadge } from '../Anime/GenreBadge';
 import { Button } from '../Common/Button';
 import { useAuth } from '@/hooks/useAuth';
 import { mangaService } from '@/services/mangaService';
 import { RatingComponent } from '../Common/RatingComponent';
 import type { Manga } from '@/types/manga';
-import { MANGA_STATUS_LABELS } from '@/utils/constants';
-import { formatDate, getImageUrl } from '@/utils/helpers';
+import { getImageUrl } from '@/utils/helpers';
 
 interface MangaDetailsProps {
   manga: Manga;
 }
 
 export function MangaDetails({ manga }: MangaDetailsProps) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const ratingSectionRef = useRef<HTMLDivElement | null>(null);
   const [isFavorito, setIsFavorito] = useState(manga.is_favorito === true);
   const [isLoading, setIsLoading] = useState(false);
   const [userRating, setUserRating] = useState<number | null>(null);
@@ -25,11 +25,52 @@ export function MangaDetails({ manga }: MangaDetailsProps) {
   const displayAverageRating = Number.isFinite(averageRating) && averageRating > 0
     ? averageRating.toFixed(1)
     : '0';
+  const totalVisualizacoes = Number(manga.total_visualizacoes ?? 0);
 
   // Atualizar estado quando manga.is_favorito mudar
   useEffect(() => {
     setIsFavorito(manga.is_favorito === true);
   }, [manga.is_favorito]);
+
+  useEffect(() => {
+    let active = true;
+
+    const loadCurrentUserRating = async () => {
+      if (!isAuthenticated || !user) {
+        setUserRating(null);
+        return;
+      }
+
+      try {
+        const reviews = await mangaService.getReviews(manga.id);
+        const reviewDoUsuario = reviews.find((review) => {
+          const sameUserId =
+            typeof (user as any).id === 'number' &&
+            review.usuario === (user as any).id;
+          const sameUsername =
+            typeof (user as any).username === 'string' &&
+            review.usuario_nome === (user as any).username;
+
+          return sameUserId || sameUsername;
+        });
+
+        if (active) {
+          setUserRating(reviewDoUsuario?.rating ?? null);
+        }
+      } catch (error) {
+        if (active) {
+          setUserRating(null);
+        }
+        console.error('Erro ao carregar avaliação atual do usuário (manga):', error);
+      }
+    };
+
+    loadCurrentUserRating();
+
+    return () => {
+      active = false;
+    };
+  }, [manga.id, isAuthenticated, user]);
 
   const handleFavoritar = async () => {
     if (!isAuthenticated) {
@@ -67,6 +108,10 @@ export function MangaDetails({ manga }: MangaDetailsProps) {
     }
   };
 
+  const handleGoToRating = () => {
+    ratingSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
   return (
     <div className="relative">
       {/* Banner */}
@@ -86,7 +131,7 @@ export function MangaDetails({ manga }: MangaDetailsProps) {
       <div className="relative container mx-auto px-4 pt-20">
         <div className="flex flex-col md:flex-row gap-8">
           {/* Capa */}
-          <div className="w-full md:w-64 lg:w-80 flex-shrink-0">
+          <div className="w-full md:w-52 lg:w-50 flex-shrink-0">
             <div className="aspect-[2/3] relative rounded-lg overflow-hidden shadow-2xl">
               {getImageUrl(manga.capa) ? (
                 <Image
@@ -107,17 +152,16 @@ export function MangaDetails({ manga }: MangaDetailsProps) {
             {isAuthenticated && (
               <>
                 <Button
-                  className="w-full mt-4"
+                  className="w-full mt-4 text-sm whitespace-nowrap"
                   variant={isFavorito ? 'secondary' : 'primary'}
                   onClick={handleFavoritar}
                   isLoading={isLoading}
                 >
-                  {isFavorito ? '❤️ Nos Favoritos' : '🤍 Adicionar aos Favoritos'}
+                  {isFavorito ? '❤️ Nos favoritos' : '🤍 Favoritar'}
                 </Button>
-                
+
                 {/* Rating */}
-                <div className="mt-4 p-4 bg-gray-800 rounded-lg">
-                  <h3 className="text-white font-semibold mb-2 text-sm">Sua Avaliação</h3>
+                <div ref={ratingSectionRef} className="mt-4 p-4 bg-gray-800 rounded-lg">
                   <RatingComponent
                     initialRating={userRating}
                     onRatingChange={handleRatingChange}
@@ -132,9 +176,6 @@ export function MangaDetails({ manga }: MangaDetailsProps) {
           {/* Informações */}
           <div className="flex-1">
             <h1 className="text-4xl font-bold text-white mb-2">{manga.titulo}</h1>
-            {manga.titulo_original && (
-              <p className="text-xl text-gray-400 mb-4">{manga.titulo_original}</p>
-            )}
 
             {/* Stats */}
             <div className="flex flex-wrap gap-4 mb-6">
@@ -144,17 +185,15 @@ export function MangaDetails({ manga }: MangaDetailsProps) {
                   {displayAverageRating}
                 </span>
                 <span className="text-gray-400 text-sm">
-                  ({manga.total_avaliacoes} avaliações)
+                  ({Number(manga.total_avaliacoes ?? 0).toLocaleString('pt-BR')} avaliações)
+                </span>
+                <span className="text-gray-500">|</span>
+                <span className="text-gray-300">👁️</span>
+                <span className="text-gray-400 text-sm">
+                  {totalVisualizacoes.toLocaleString('pt-BR')}
                 </span>
               </div>
               
-              <div className="bg-gray-800 px-4 py-2 rounded-lg">
-                <span className="text-white">{MANGA_STATUS_LABELS[manga.status]}</span>
-              </div>
-              
-              <div className="bg-gray-800 px-4 py-2 rounded-lg">
-                <span className="text-white">{manga.capitulos_totais} capítulos</span>
-              </div>
             </div>
 
             {/* Gêneros */}
@@ -173,27 +212,6 @@ export function MangaDetails({ manga }: MangaDetailsProps) {
               <p className="text-gray-300 leading-relaxed">{manga.sinopse}</p>
             </div>
 
-            {/* Informações Adicionais */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-gray-800 p-6 rounded-lg">
-              <div>
-                <span className="text-gray-400">Editora:</span>
-                <span className="text-white ml-2">{manga.editora || 'N/A'}</span>
-              </div>
-              <div>
-                <span className="text-gray-400">Data de Lançamento:</span>
-                <span className="text-white ml-2">{formatDate(manga.data_lancamento)}</span>
-              </div>
-              <div>
-                <span className="text-gray-400">Páginas por Capítulo:</span>
-                <span className="text-white ml-2">{manga.paginas_por_capitulo} páginas</span>
-              </div>
-              <div>
-                <span className="text-gray-400">Total de Capítulos:</span>
-                <span className="text-white ml-2">
-                  {manga.total_capitulos || manga.capitulos_totais || 0}
-                </span>
-              </div>
-            </div>
           </div>
         </div>
       </div>

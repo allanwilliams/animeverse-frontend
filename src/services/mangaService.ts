@@ -1,5 +1,6 @@
 import api from './api';
 import type { Manga, MangaList, MangaFilters, Capitulo, ReviewManga } from '@/types/manga';
+import type { PaginatedResponse } from '@/types/api';
 import type { ContinuarLendo } from '@/types/user';
 
 export const mangaService = {
@@ -30,8 +31,14 @@ export const mangaService = {
     return response.data;
   },
 
-  getCapitulos: async (mangaId: number): Promise<Capitulo[]> => {
-    const response = await api.get<Capitulo[]>(`/mangas/${mangaId}/capitulos/`);
+  getCapitulos: async (
+    mangaId: number,
+    page: number = 1
+  ): Promise<PaginatedResponse<Capitulo>> => {
+    const response = await api.get<PaginatedResponse<Capitulo>>(
+      `/mangas/${mangaId}/capitulos/`,
+      { params: { page } }
+    );
     return response.data;
   },
 

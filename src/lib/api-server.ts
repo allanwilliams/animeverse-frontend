@@ -51,6 +51,19 @@ export async function getGenerosServer(): Promise<Genero[]> {
   }
 }
 
+/** Gêneros que possuem pelo menos um manga cadastrado (lista do filtro de mangás). */
+export async function getGenerosMangasCadastradosServer(): Promise<Genero[]> {
+  try {
+    const response = await apiServer.get('/mangas/generos-cadastrados/');
+    const data = response.data as unknown;
+    if (Array.isArray(data)) return data as Genero[];
+    return [];
+  } catch (error) {
+    console.error('Erro ao buscar gêneros de mangás no servidor:', error);
+    return [];
+  }
+}
+
 export async function getAnimesServer(filters?: AnimeFilters): Promise<AnimeList | null> {
   try {
     // Serializar arrays corretamente para o Django
@@ -220,14 +233,20 @@ export async function getMangaByIdServer(id: number): Promise<Manga | null> {
   }
 }
 
-export async function getCapitulosServer(mangaId: number): Promise<Capitulo[]> {
+export async function getCapitulosServer(
+  mangaId: number,
+  page: number = 1
+): Promise<PaginatedResponse<Capitulo> | null> {
   try {
     const headers = await getAuthHeaders();
-    const response = await apiServer.get<Capitulo[]>(`/mangas/${mangaId}/capitulos/`, { headers });
+    const response = await apiServer.get<PaginatedResponse<Capitulo>>(
+      `/mangas/${mangaId}/capitulos/`,
+      { headers, params: { page } }
+    );
     return response.data;
   } catch (error) {
     console.error('Erro ao buscar capítulos no servidor:', error);
-    return [];
+    return null;
   }
 }
 

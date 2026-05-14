@@ -23,7 +23,9 @@ export function AnimeDetails({ anime }: AnimeDetailsProps) {
   const displayAverageRating = Number.isFinite(averageRating) && averageRating > 0
     ? averageRating.toFixed(1)
     : '0';
+  const totalAvaliacoes = Number(anime.total_avaliacoes ?? 0);
   const totalVisualizacoes = Number(anime.total_visualizacoes ?? 0);
+  const backgroundImage = getImageUrl(anime.banner) || getImageUrl(anime.capa);
 
   // Atualizar estado quando anime.is_favorito mudar
   useEffect(() => {
@@ -107,10 +109,10 @@ export function AnimeDetails({ anime }: AnimeDetailsProps) {
   return (
     <div className="relative">
       {/* Banner */}
-      {getImageUrl(anime.banner) && (
+      {backgroundImage && (
         <div className="absolute inset-x-0 top-0 h-96 overflow-hidden">
           <Image
-            src={getImageUrl(anime.banner)!}
+            src={backgroundImage}
             alt={anime.titulo}
             fill
             className="object-cover"
@@ -144,12 +146,12 @@ export function AnimeDetails({ anime }: AnimeDetailsProps) {
             {isAuthenticated && (
               <>
                 <Button
-                  className="w-full mt-4"
+                  className="w-full mt-4 text-sm whitespace-nowrap"
                   variant={isFavorito ? 'secondary' : 'primary'}
                   onClick={handleFavoritar}
                   isLoading={isLoading}
                 >
-                  {isFavorito ? '❤️ Nos Favoritos' : '🤍 Adicionar aos Favoritos'}
+                  {isFavorito ? '❤️ Nos favoritos' : '🤍 Favoritar'}
                 </Button>
 
                 <div className="mt-4 p-4 bg-gray-800 rounded-lg">
@@ -168,17 +170,19 @@ export function AnimeDetails({ anime }: AnimeDetailsProps) {
           <div className="flex-1">
             <h1 className="text-4xl font-bold text-white mb-2">{anime.titulo}</h1>
 
-            {/* Avaliações */}
-            <div className="mb-6 space-y-3">
-              <div className="flex items-center gap-2">
+            {/* Stats */}
+            <div className="flex flex-wrap gap-4 mb-6">
+              <div className="flex items-center gap-2 bg-gray-800 px-4 py-2 rounded-lg">
                 <span className="text-yellow-400">⭐</span>
-                <span className="text-white font-semibold">Avaliação média:</span>
-                <span className="text-gray-300">
+                <span className="text-white font-bold">
                   {displayAverageRating}
                 </span>
+                <span className="text-gray-400 text-sm">
+                  ({totalAvaliacoes.toLocaleString('pt-BR')} avaliações)
+                </span>
                 <span className="text-gray-500">|</span>
-                <span className="text-gray-400">👁️</span>
-                <span className="text-gray-300">
+                <span className="text-gray-300">👁️</span>
+                <span className="text-gray-400 text-sm">
                   {totalVisualizacoes.toLocaleString('pt-BR')}
                 </span>
               </div>
